@@ -22,8 +22,6 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
-library pll;
-
 entity top is
   port (
     clk : in std_logic;
@@ -32,12 +30,19 @@ entity top is
 end top;
 
 architecture arch of top is
-  signal clk_6 : std_logic;
+  signal clk_5 : std_logic;
 begin
-  counter : process (clk)
+  pll : entity work.pll
+  port map (
+    inclk0 => clk,
+    c0     => clk_5,
+    locked => open
+  );
+
+  counter : process (clk_5)
     variable n : unsigned(31 downto 0);
   begin
-    if rising_edge(clk) then
+    if rising_edge(clk_5) then
       n := n + 1;
       led <= std_logic_vector(n(31 downto 24));
     end if;
