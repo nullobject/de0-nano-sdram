@@ -38,11 +38,11 @@ entity sdram is
     clk : in std_logic;
     cke : in std_logic := '1';
 
-    -- asserted when there is an operation pending
+    -- asserted when there is a pending operation
     busy : out std_logic;
 
-    -- asserted when the pending operation has completed
-    done : out std_logic;
+    -- asserted when the current operation has completed
+    ready : out std_logic;
 
     -- address
     addr : in std_logic_vector(24 downto 0);
@@ -59,7 +59,7 @@ entity sdram is
     -- write enable
     wren : in std_logic;
 
-    -- SDRAM IO
+    -- SDRAM interface
     sdram_clk   : out std_logic;
     sdram_cke   : out std_logic;
     sdram_cs_n  : out std_logic;
@@ -75,38 +75,37 @@ end sdram;
 
 architecture arch of sdram is
   -- commands
-  constant CMD_LOAD_MODE    : std_logic_vector(3 downto 0) := "0000"; -- 0
-  constant CMD_AUTO_REFRESH : std_logic_vector(3 downto 0) := "0001"; -- 1
-  constant CMD_PRECHARGE    : std_logic_vector(3 downto 0) := "0010"; -- 2
-  constant CMD_ACTIVE       : std_logic_vector(3 downto 0) := "0011"; -- 3
-  constant CMD_WRITE        : std_logic_vector(3 downto 0) := "0100"; -- 4
-  constant CMD_READ         : std_logic_vector(3 downto 0) := "0101"; -- 5
-  constant CMD_STOP         : std_logic_vector(3 downto 0) := "0110"; -- 6
-  constant CMD_NOP          : std_logic_vector(3 downto 0) := "0111"; -- 7
-  constant CMD_INHIBIT      : std_logic_vector(3 downto 0) := "1000"; -- 8
+  constant CMD_LOAD_MODE    : std_logic_vector(3 downto 0) := "0000";
+  constant CMD_AUTO_REFRESH : std_logic_vector(3 downto 0) := "0001";
+  constant CMD_PRECHARGE    : std_logic_vector(3 downto 0) := "0010";
+  constant CMD_ACTIVE       : std_logic_vector(3 downto 0) := "0011";
+  constant CMD_WRITE        : std_logic_vector(3 downto 0) := "0100";
+  constant CMD_READ         : std_logic_vector(3 downto 0) := "0101";
+  constant CMD_STOP         : std_logic_vector(3 downto 0) := "0110";
+  constant CMD_NOP          : std_logic_vector(3 downto 0) := "0111";
+  constant CMD_INHIBIT      : std_logic_vector(3 downto 0) := "1000";
 
-  -- mode register
-  constant MODE_REGISTER : std_logic_vector(12 downto 0) := "000" & WRITE_BURST_MODE & "00" & CAS_LATENCY & BURST_TYPE & BURST_LENGTH;
+  -- this value is written to the mode register to configure the memory
+  constant MODE : std_logic_vector(12 downto 0) := "000" & WRITE_BURST_MODE & "00" & CAS_LATENCY & BURST_TYPE & BURST_LENGTH;
+
+  -- this value can be pre-pended to the column address to enable auto
+  -- precharging during a read/write operation
+  constant AUTO_PRECHARGE : std_logic_vector(3 downto 0) := "0010";
 
   constant COL_WIDTH  : natural := 9;
   constant ROW_WIDTH  : natural := 13;
   constant BANK_WIDTH : natural := 2;
 
-  type state_t is (INIT, IDLE, REFRESH, READ, READ_DONE, WRITE, PRECHARGE);
+  type state_t is (INIT, IDLE, ACTIVE, READ, READ_WAIT, READ_DONE, WRITE, REFRESH, PRECHARGE);
 
   -- state signals
   signal state, next_state : state_t;
 
-	-- command signals
-  signal cmd, next_cmd : std_logic_vector(3 downto 0);
-
   -- registers
+  signal wren_reg : std_logic;
   signal addr_reg : std_logic_vector(24 downto 0);
   signal din_reg  : std_logic_vector(15 downto 0);
   signal dout_reg : std_logic_vector(15 downto 0);
-
-  -- control signals
-  signal start_refresh : std_logic;
 
   -- aliases to decode the address register
   alias col  : std_logic_vector(COL_WIDTH-1 downto 0) is addr_reg(8 downto 0);
@@ -119,16 +118,12 @@ begin
       state <= INIT;
     elsif rising_edge(clk) then
       state <= next_state;
-      cmd   <= next_cmd;
     end if;
   end process;
 
-  fsm : process (state, start_refresh, rden, wren)
+  fsm : process (state, rden, wren, wren_reg)
   begin
     next_state <= state;
-
-    -- default to a NOP command
-    next_cmd <= CMD_NOP;
 
     case state is
       -- this is the default state, we need to initialise the memory
@@ -140,95 +135,110 @@ begin
         -- program mode register
         next_state <= IDLE;
 
-      -- wait for a read/write or refresh operation
+      -- wait for a read/write request
       when IDLE =>
-        if start_refresh = '1' then
-          next_state <= REFRESH;
-        elsif rden = '1' then
-          next_state <= READ;
-          next_cmd   <= CMD_ACTIVE;
-        elsif wren = '1' then
-          next_state <= WRITE;
-          next_cmd   <= CMD_ACTIVE;
+        if rden = '1' or wren = '1' then
+          next_state <= ACTIVE;
         end if;
 
-      -- perform refresh
-      when REFRESH =>
-        next_state <= IDLE;
-        next_cmd   <= CMD_AUTO_REFRESH;
+      -- begin the read/write operation
+      when ACTIVE =>
+        if wren_reg = '1' then
+          next_state <= WRITE;
+        else
+          next_state <= READ;
+        end if;
 
       -- perform read
       when READ =>
-        next_state <= READ_DONE;
-        next_cmd   <= CMD_READ;
+        next_state <= READ_WAIT;
 
-      -- read is finished
+      -- wait for data
+      when READ_WAIT =>
+        next_state <= READ_DONE;
+
+      -- read is done
       when READ_DONE =>
-        next_state <= PRECHARGE;
+        next_state <= IDLE;
 
       -- perform write
       when WRITE =>
-        next_state <= PRECHARGE;
-        next_cmd   <= CMD_WRITE;
+        next_state <= IDLE;
 
       -- close row
       when PRECHARGE =>
         next_state <= IDLE;
-        next_cmd   <= CMD_PRECHARGE;
+
+      when REFRESH =>
+        next_state <= IDLE;
     end case;
   end process;
 
   -- latch input signals
-  process (clk)
+  latch_input_signals : process (clk)
   begin
     if rising_edge(clk) then
       if state = IDLE then
-        -- latch the address
+        -- latch address
         addr_reg <= addr;
 
-        -- latch the input data
+        -- latch input data
         din_reg <= din;
-      elsif state = READ_DONE then
-        -- latch the SDRAM data
+
+        -- latch write enable
+        wren_reg <= wren;
+      end if;
+    end if;
+  end process;
+
+  -- latch SDRAM data bus
+  latch_sdram_data : process (clk)
+  begin
+    if rising_edge(clk) then
+      if state = READ_DONE then
         dout_reg <= sdram_dq;
       end if;
     end if;
   end process;
 
-	-- set SDRAM bank and address
-  process (state, addr_reg)
-  begin
-    sdram_ba <= (others => '0');
-    sdram_a  <= (others => '0');
+  -- FIXME: set control signals
+  busy  <= '1' when state /= IDLE else '0';
+  ready <= '1' when state = IDLE else '0';
 
-    case state is
-      when INIT =>
-        sdram_a <= MODE_REGISTER;
-      when IDLE =>
-        sdram_ba <= bank;
-        sdram_a  <= row;
-      when READ =>
-        sdram_ba <= bank;
-        sdram_a  <= "0000" & col;
-      when WRITE =>
-        sdram_ba <= bank;
-        sdram_a  <= "0000" & col;
-      when others => null;
-    end case;
-  end process;
-
-  -- FIXME
-  busy <= '0';
-  done <= '0';
-
-	-- set SDRAM control signals
-  (sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n) <= cmd;
-
-  -- set SDRAM data bus
-  sdram_dq <= din_reg when state = WRITE else (others => 'Z');
-  sdram_dqm <= "00";
+  -- set SDRAM clock signals
   sdram_clk <= clk;
   sdram_cke <= '1';
 
+  -- set SDRAM bank
+  with state select
+    sdram_ba <=
+      bank            when ACTIVE,
+      bank            when READ,
+      bank            when WRITE,
+      (others => '0') when others;
+
+  -- set SDRAM address
+  with state select
+    sdram_a <=
+      MODE                 when INIT,
+      row                  when ACTIVE,
+      AUTO_PRECHARGE & col when READ,
+      AUTO_PRECHARGE & col when WRITE,
+      (others => '0')      when others;
+
+  -- set SDRAM data bus if we're writing, otherwise put it into a high impedance state
+  sdram_dqm <= "00";
+  sdram_dq <= din_reg when state = WRITE else (others => 'Z');
+
+	-- set SDRAM control signals
+  with state select
+    (sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n) <=
+      CMD_ACTIVE    when ACTIVE,
+      CMD_READ      when READ,
+      CMD_WRITE     when WRITE,
+      CMD_PRECHARGE when PRECHARGE,
+      CMD_NOP       when others;
+
+  -- set output data
   dout <= dout_reg;
 end architecture arch;
