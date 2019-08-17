@@ -27,7 +27,7 @@ entity sdram is
   generic (
     BURST_LENGTH     : std_logic_vector(2 downto 0) := "000"; -- 000=1, 001=2, 010=4, 011=8
     BURST_TYPE       : std_logic_vector(0 downto 0) := "0";   -- 0=sequential, 1=interleaved
-    CAS_LATENCY      : std_logic_vector(2 downto 0) := "010"; -- 0=below 100MHz, 011=above 100MHz
+    CAS_LATENCY      : std_logic_vector(2 downto 0) := "010"; -- 010=below 100MHz, 011=above 100MHz
     WRITE_BURST_MODE : std_logic_vector(0 downto 0) := "1"    -- 0=burst, 1=single bit
   );
   port (
@@ -136,9 +136,9 @@ begin
           next_cmd <= CMD_PRECHARGE;
         elsif wait_counter = 2 then
           next_cmd <= CMD_AUTO_REFRESH;
-        elsif wait_counter = 12 then
+        elsif wait_counter = 11 then
           next_cmd <= CMD_AUTO_REFRESH;
-        elsif wait_counter = 21 then
+        elsif wait_counter = 20 then
           next_state <= LOAD_MODE;
           next_cmd   <= CMD_LOAD_MODE;
         end if;
@@ -159,14 +159,22 @@ begin
           next_cmd   <= CMD_ACTIVE;
         end if;
 
+      -- execute an auto refresh command
+      when REFRESH =>
+        if wait_counter = 8 then
+          next_state <= IDLE;
+        end if;
+
       -- begin the read/write command
       when ACTIVE =>
-        if wren_reg = '1' then
-          next_state <= WRITE;
-          next_cmd   <= CMD_WRITE;
-        else
-          next_state <= READ;
-          next_cmd   <= CMD_READ;
+        if wait_counter = 1 then
+          if wren_reg = '1' then
+            next_state <= WRITE;
+            next_cmd   <= CMD_WRITE;
+          else
+            next_state <= READ;
+            next_cmd   <= CMD_READ;
+          end if;
         end if;
 
       -- execute a read command
@@ -182,12 +190,6 @@ begin
       -- execute a write command
       when WRITE =>
         next_state <= IDLE;
-
-      -- execute an auto refresh command
-      when REFRESH =>
-        if wait_counter = 9 then
-          next_state <= IDLE;
-        end if;
     end case;
   end process;
 
