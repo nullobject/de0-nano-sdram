@@ -85,8 +85,13 @@ architecture arch of sdram is
   constant CMD_NOP          : std_logic_vector(3 downto 0) := "0111";
   constant CMD_INHIBIT      : std_logic_vector(3 downto 0) := "1000";
 
-  -- this value is written to the mode register to configure the memory
+  -- the value written to the mode register to configure the memory
   constant MODE : std_logic_vector(12 downto 0) := "000" & WRITE_BURST_MODE & "00" & CAS_LATENCY & BURST_TYPE & BURST_LENGTH;
+
+  -- The minimum number of clock ticks between each auto refresh command. The
+  -- datasheet specifies that the auto refresh command needs to be executed
+  -- 8192 times every 64ms.
+  constant TICKS_PER_REFRESH : natural := 781;
 
   constant COL_WIDTH  : natural := 9;
   constant ROW_WIDTH  : natural := 13;
@@ -107,10 +112,9 @@ architecture arch of sdram is
   signal wren_reg  : std_logic;
   signal ready_reg : std_logic;
 
-  -- counter
-  signal t : natural range 0 to 31;
-
-  -- control signals
+  -- counters
+  signal wait_counter    : natural range 0 to 31;
+  signal refresh_counter : natural range 0 to 1023;
 
   -- aliases to decode the address register
   alias col  : std_logic_vector(COL_WIDTH-1 downto 0) is addr_reg(8 downto 0);
@@ -118,7 +122,7 @@ architecture arch of sdram is
   alias bank : std_logic_vector(BANK_WIDTH-1 downto 0) is addr_reg(24 downto 23);
 begin
   -- state machine
-  fsm : process (state, cmd, t, rden, wren, wren_reg, ready_reg)
+  fsm : process (state, cmd, wait_counter, refresh_counter, rden, wren, wren_reg, ready_reg)
   begin
     next_state <= state;
 
@@ -126,33 +130,36 @@ begin
     next_cmd <= CMD_NOP;
 
     case state is
-      -- perform the initialisation sequence
+      -- execute the initialisation sequence
       when INIT =>
-        if t = 0 then
+        if wait_counter = 0 then
           next_cmd <= CMD_PRECHARGE;
-        elsif t = 2 then
+        elsif wait_counter = 2 then
           next_cmd <= CMD_AUTO_REFRESH;
-        elsif t = 12 then
+        elsif wait_counter = 12 then
           next_cmd <= CMD_AUTO_REFRESH;
-        elsif t = 22 then
+        elsif wait_counter = 21 then
           next_state <= LOAD_MODE;
           next_cmd   <= CMD_LOAD_MODE;
         end if;
 
       -- load the mode register
       when LOAD_MODE =>
-        if t = 1 then
+        if wait_counter = 1 then
           next_state <= IDLE;
         end if;
 
       -- wait for a read/write request
       when IDLE =>
-        if rden = '1' or wren = '1' then
+        if refresh_counter >= TICKS_PER_REFRESH-1 then
+          next_state <= REFRESH;
+          next_cmd   <= CMD_AUTO_REFRESH;
+        elsif rden = '1' or wren = '1' then
           next_state <= ACTIVE;
           next_cmd   <= CMD_ACTIVE;
         end if;
 
-      -- begin the read/write operation
+      -- begin the read/write command
       when ACTIVE =>
         if wren_reg = '1' then
           next_state <= WRITE;
@@ -162,23 +169,25 @@ begin
           next_cmd   <= CMD_READ;
         end if;
 
-      -- perform a read operation
+      -- execute a read command
       when READ =>
         next_state <= READ_WAIT;
 
-      -- wait for the read operation to complete
+      -- wait for the read command to complete
       when READ_WAIT =>
         if ready_reg = '1' then
           next_state <= IDLE;
         end if;
 
-      -- perform a write operation
+      -- execute a write command
       when WRITE =>
         next_state <= IDLE;
 
-      -- perform an auto refresh operation
+      -- execute an auto refresh command
       when REFRESH =>
-        next_state <= IDLE;
+        if wait_counter = 9 then
+          next_state <= IDLE;
+        end if;
     end case;
   end process;
 
@@ -194,18 +203,34 @@ begin
     end if;
   end process;
 
-  -- Update the counter if we're not changing state.
+  -- Update the wait counter.
   --
-  -- The counter is used to hold the state for a number of clock ticks.
-  update_counter : process (clk, reset)
+  -- The wait counter is used to hold the state for a number of clock ticks.
+  update_wait_counter : process (clk, reset)
   begin
     if reset = '1' then
-      t <= 0;
+      wait_counter <= 0;
     elsif rising_edge(clk) then
-      if state /= next_state then  -- state is changing
-        t <= 0;
+      if state /= next_state then -- state is changing
+        wait_counter <= 0;
       else
-        t <= t + 1;
+        wait_counter <= wait_counter + 1;
+      end if;
+    end if;
+  end process;
+
+  -- Update the refresh counter.
+  --
+  -- The refresh counter is cleared once an auto refresh command is executed.
+  update_refresh_counter : process (clk, reset)
+  begin
+    if reset = '1' then
+      refresh_counter <= 0;
+    elsif rising_edge(clk) then
+      if state = REFRESH then
+        refresh_counter <= 0;
+      else
+        refresh_counter <= refresh_counter + 1;
       end if;
     end if;
   end process;
@@ -239,10 +264,10 @@ begin
   sdram_clk <= clk;
 
   -- deassert the clock enable at the beginning of the initialisation sequence
-  sdram_cke <= '0' when state = INIT and t = 0 else '1';
+  sdram_cke <= '0' when state = INIT and wait_counter = 0 else '1';
 
   -- the SDRAM data is ready after the CAS latency has elapsed
-  ready_reg <= '1' when state = READ_WAIT and t >= unsigned(CAS_LATENCY)-1 else '0';
+  ready_reg <= '1' when state = READ_WAIT and wait_counter >= unsigned(CAS_LATENCY)-1 else '0';
 
   -- set SDRAM bank
   with state select
