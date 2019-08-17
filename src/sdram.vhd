@@ -88,30 +88,29 @@ architecture arch of sdram is
   -- this value is written to the mode register to configure the memory
   constant MODE : std_logic_vector(12 downto 0) := "000" & WRITE_BURST_MODE & "00" & CAS_LATENCY & BURST_TYPE & BURST_LENGTH;
 
-  -- this value can be pre-pended to the column address to enable auto
-  -- precharging during a read/write operation
-  constant AUTO_PRECHARGE : std_logic_vector(3 downto 0) := "0010";
-
   constant COL_WIDTH  : natural := 9;
   constant ROW_WIDTH  : natural := 13;
   constant BANK_WIDTH : natural := 2;
 
-  type state_t is (INIT, IDLE, ACTIVE, READ, READ_WAIT, WRITE, REFRESH, PRECHARGE);
+  type state_t is (INIT, LOAD_MODE, IDLE, ACTIVE, READ, READ_WAIT, WRITE, REFRESH);
 
   -- state signals
   signal state, next_state : state_t;
 
+  -- command signals
+  signal cmd, next_cmd : std_logic_vector(3 downto 0) := CMD_NOP;
+
   -- registers
-  signal wren_reg : std_logic;
-  signal addr_reg : std_logic_vector(24 downto 0);
-  signal din_reg  : std_logic_vector(15 downto 0);
-  signal dout_reg : std_logic_vector(15 downto 0);
+  signal addr_reg  : std_logic_vector(24 downto 0);
+  signal din_reg   : std_logic_vector(15 downto 0);
+  signal dout_reg  : std_logic_vector(15 downto 0);
+  signal wren_reg  : std_logic;
+  signal ready_reg : std_logic;
 
   -- counter
-  signal t : natural range 0 to 7;
+  signal t : natural range 0 to 31;
 
   -- control signals
-  signal read_done : std_logic;
 
   -- aliases to decode the address register
   alias col  : std_logic_vector(COL_WIDTH-1 downto 0) is addr_reg(8 downto 0);
@@ -119,32 +118,48 @@ architecture arch of sdram is
   alias bank : std_logic_vector(BANK_WIDTH-1 downto 0) is addr_reg(24 downto 23);
 begin
   -- state machine
-  fsm : process (state, rden, wren, wren_reg, read_done)
+  fsm : process (state, cmd, t, rden, wren, wren_reg, ready_reg)
   begin
     next_state <= state;
 
+    -- default to a NOP command
+    next_cmd <= CMD_NOP;
+
     case state is
-      -- this is the default state, we need to initialise the memory
+      -- perform the initialisation sequence
       when INIT =>
-        -- wait 100us
-        -- precharge all banks
-        -- auto refresh
-        -- auto refresh
-        -- program mode register
-        next_state <= IDLE;
+        if t = 0 then
+          next_cmd <= CMD_PRECHARGE;
+        elsif t = 2 then
+          next_cmd <= CMD_AUTO_REFRESH;
+        elsif t = 12 then
+          next_cmd <= CMD_AUTO_REFRESH;
+        elsif t = 22 then
+          next_state <= LOAD_MODE;
+          next_cmd   <= CMD_LOAD_MODE;
+        end if;
+
+      -- load the mode register
+      when LOAD_MODE =>
+        if t = 1 then
+          next_state <= IDLE;
+        end if;
 
       -- wait for a read/write request
       when IDLE =>
         if rden = '1' or wren = '1' then
           next_state <= ACTIVE;
+          next_cmd   <= CMD_ACTIVE;
         end if;
 
       -- begin the read/write operation
       when ACTIVE =>
         if wren_reg = '1' then
           next_state <= WRITE;
+          next_cmd   <= CMD_WRITE;
         else
           next_state <= READ;
+          next_cmd   <= CMD_READ;
         end if;
 
       -- perform a read operation
@@ -153,16 +168,12 @@ begin
 
       -- wait for the read operation to complete
       when READ_WAIT =>
-        if read_done = '1' then
+        if ready_reg = '1' then
           next_state <= IDLE;
         end if;
 
       -- perform a write operation
       when WRITE =>
-        next_state <= IDLE;
-
-      -- close the row
-      when PRECHARGE =>
         next_state <= IDLE;
 
       -- perform an auto refresh operation
@@ -171,16 +182,22 @@ begin
     end case;
   end process;
 
+  -- latch the next state
   latch_state : process (clk, reset)
   begin
     if reset = '1' then
       state <= INIT;
+      cmd   <= CMD_NOP;
     elsif rising_edge(clk) then
       state <= next_state;
+      cmd   <= next_cmd;
     end if;
   end process;
 
-  update_counter : process(clk, reset)
+  -- Update the counter if we're not changing state.
+  --
+  -- The counter is used to hold the state for a number of clock ticks.
+  update_counter : process (clk, reset)
   begin
     if reset = '1' then
       t <= 0;
@@ -212,22 +229,20 @@ begin
   latch_sdram_data : process (clk)
   begin
     if rising_edge(clk) then
-      if read_done = '1' then
+      if ready_reg = '1' then
         dout_reg <= sdram_dq;
       end if;
     end if;
   end process;
 
-  -- FIXME: set control signals
-  busy  <= '1' when state /= IDLE else '0';
-  ready <= '1' when state = IDLE else '0';
-
-  -- the read operation is complete after the CAS latency has elapsed
-  read_done <= '1' when state = READ_WAIT and t >= unsigned(CAS_LATENCY)-1 else '0';
-
   -- set SDRAM clock signals
   sdram_clk <= clk;
-  sdram_cke <= '1';
+
+  -- deassert the clock enable at the beginning of the initialisation sequence
+  sdram_cke <= '0' when state = INIT and t = 0 else '1';
+
+  -- the SDRAM data is ready after the CAS latency has elapsed
+  ready_reg <= '1' when state = READ_WAIT and t >= unsigned(CAS_LATENCY)-1 else '0';
 
   -- set SDRAM bank
   with state select
@@ -240,25 +255,22 @@ begin
   -- set SDRAM address
   with state select
     sdram_a <=
-      MODE                 when INIT,
-      row                  when ACTIVE,
-      AUTO_PRECHARGE & col when READ,
-      AUTO_PRECHARGE & col when WRITE,
-      (others => '0')      when others;
+      "0010000000000" when INIT,
+      MODE            when LOAD_MODE,
+      row             when ACTIVE,
+      "0010" & col    when READ,  -- auto precharge
+      "0010" & col    when WRITE, -- auto precharge
+      (others => '0') when others;
 
   -- set SDRAM data bus if we're writing, otherwise put it into a high impedance state
   sdram_dqm <= "00";
   sdram_dq <= din_reg when state = WRITE else (others => 'Z');
 
 	-- set SDRAM control signals
-  with state select
-    (sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n) <=
-      CMD_ACTIVE    when ACTIVE,
-      CMD_READ      when READ,
-      CMD_WRITE     when WRITE,
-      CMD_PRECHARGE when PRECHARGE,
-      CMD_NOP       when others;
+  (sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n) <= cmd;
 
-  -- set output data
-  dout <= dout_reg;
+  -- set output signals
+  busy  <= '1' when state /= IDLE else '0';
+  ready <= ready_reg;
+  dout  <= dout_reg;
 end architecture arch;

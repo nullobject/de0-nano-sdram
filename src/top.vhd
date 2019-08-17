@@ -27,6 +27,9 @@ entity top is
     -- 50MHz clock
     clk : in std_logic;
 
+    -- buttons
+    key : in std_logic_vector(0 downto 0);
+
     -- LEDs
     led : out std_logic_vector(7 downto 0);
 
@@ -82,7 +85,7 @@ begin
     clk   => clk,
 
     -- control signals
-    busy => busy,
+    busy  => busy,
     ready => ready,
 
     -- IO port
@@ -141,9 +144,11 @@ begin
     end case;
   end process;
 
-  update_counter : process (clk)
+  update_counter : process (clk, reset)
   begin
-    if rising_edge(clk) then
+    if reset = '1' then
+      n <= (others => '0');
+    elsif rising_edge(clk) then
       if state = WRITE or state = READ then
         n <= n + 1;
       end if;
@@ -151,7 +156,7 @@ begin
   end process;
 
   -- reset <= not pll_locked;
-  reset <= '0';
+  reset <= not key(0);
 
   wren <= '1' when state = WRITE else '0';
   rden <= '1' when state = READ else '0';
