@@ -27,7 +27,7 @@ entity sdram is
   generic (
     BURST_LENGTH     : std_logic_vector(2 downto 0) := "000"; -- 000=1, 001=2, 010=4, 011=8
     BURST_TYPE       : std_logic_vector(0 downto 0) := "0";   -- 0=sequential, 1=interleaved
-    CAS_LATENCY      : std_logic_vector(2 downto 0) := "010"; -- 010=below 100MHz, 011=above 100MHz
+    CAS_LATENCY      : std_logic_vector(2 downto 0) := "010"; -- 0=below 100MHz, 011=above 100MHz
     WRITE_BURST_MODE : std_logic_vector(0 downto 0) := "1"    -- 0=burst, 1=single bit
   );
   port (
@@ -96,7 +96,7 @@ architecture arch of sdram is
   constant ROW_WIDTH  : natural := 13;
   constant BANK_WIDTH : natural := 2;
 
-  type state_t is (INIT, IDLE, ACTIVE, READ, READ_WAIT, READ_DONE, WRITE, REFRESH, PRECHARGE);
+  type state_t is (INIT, IDLE, ACTIVE, READ, READ_WAIT, WRITE, REFRESH, PRECHARGE);
 
   -- state signals
   signal state, next_state : state_t;
@@ -107,21 +107,19 @@ architecture arch of sdram is
   signal din_reg  : std_logic_vector(15 downto 0);
   signal dout_reg : std_logic_vector(15 downto 0);
 
+  -- counter
+  signal t : natural range 0 to 7;
+
+  -- control signals
+  signal read_done : std_logic;
+
   -- aliases to decode the address register
   alias col  : std_logic_vector(COL_WIDTH-1 downto 0) is addr_reg(8 downto 0);
   alias row  : std_logic_vector(ROW_WIDTH-1 downto 0) is addr_reg(22 downto 10);
   alias bank : std_logic_vector(BANK_WIDTH-1 downto 0) is addr_reg(24 downto 23);
 begin
-  latch_state : process (clk, reset)
-  begin
-    if reset = '1' then
-      state <= INIT;
-    elsif rising_edge(clk) then
-      state <= next_state;
-    end if;
-  end process;
-
-  fsm : process (state, rden, wren, wren_reg)
+  -- state machine
+  fsm : process (state, rden, wren, wren_reg, read_done)
   begin
     next_state <= state;
 
@@ -149,53 +147,72 @@ begin
           next_state <= READ;
         end if;
 
-      -- perform read
+      -- perform a read operation
       when READ =>
         next_state <= READ_WAIT;
 
-      -- wait for data
+      -- wait for the read operation to complete
       when READ_WAIT =>
-        next_state <= READ_DONE;
+        if read_done = '1' then
+          next_state <= IDLE;
+        end if;
 
-      -- read is done
-      when READ_DONE =>
-        next_state <= IDLE;
-
-      -- perform write
+      -- perform a write operation
       when WRITE =>
         next_state <= IDLE;
 
-      -- close row
+      -- close the row
       when PRECHARGE =>
         next_state <= IDLE;
 
+      -- perform an auto refresh operation
       when REFRESH =>
         next_state <= IDLE;
     end case;
   end process;
 
-  -- latch input signals
+  latch_state : process (clk, reset)
+  begin
+    if reset = '1' then
+      state <= INIT;
+    elsif rising_edge(clk) then
+      state <= next_state;
+    end if;
+  end process;
+
+  update_counter : process(clk, reset)
+  begin
+    if reset = '1' then
+      t <= 0;
+    elsif rising_edge(clk) then
+      if state /= next_state then  -- state is changing
+        t <= 0;
+      else
+        t <= t + 1;
+      end if;
+    end if;
+  end process;
+
+  -- Latch the input signals.
+  --
+  -- Some of the input signals need to be registered, because they are used
+  -- during later states.
   latch_input_signals : process (clk)
   begin
     if rising_edge(clk) then
       if state = IDLE then
-        -- latch address
         addr_reg <= addr;
-
-        -- latch input data
-        din_reg <= din;
-
-        -- latch write enable
+        din_reg  <= din;
         wren_reg <= wren;
       end if;
     end if;
   end process;
 
-  -- latch SDRAM data bus
+  -- latch the SDRAM data once the read operation has completed
   latch_sdram_data : process (clk)
   begin
     if rising_edge(clk) then
-      if state = READ_DONE then
+      if read_done = '1' then
         dout_reg <= sdram_dq;
       end if;
     end if;
@@ -204,6 +221,9 @@ begin
   -- FIXME: set control signals
   busy  <= '1' when state /= IDLE else '0';
   ready <= '1' when state = IDLE else '0';
+
+  -- the read operation is complete after the CAS latency has elapsed
+  read_done <= '1' when state = READ_WAIT and t >= unsigned(CAS_LATENCY)-1 else '0';
 
   -- set SDRAM clock signals
   sdram_clk <= clk;
