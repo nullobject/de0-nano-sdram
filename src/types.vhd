@@ -21,8 +21,19 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use ieee.math_real.all;
 
 package types is
-  constant SDRAM_ADDR_WIDTH : natural := 25;
-  constant SDRAM_DATA_WIDTH : natural := 32;
+  constant SDRAM_ADDR_WIDTH : natural := 24;
+  constant SDRAM_DIN_WIDTH  : natural := 16;
+  constant SDRAM_DOUT_WIDTH : natural := 32;
+
+  function ilog2(n : natural) return natural;
 end package types;
+
+package body types is
+  function ilog2(n : natural) return natural is
+  begin
+    return natural(log2(real(n)));
+  end ilog2;
+end package body types;

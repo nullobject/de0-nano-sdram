@@ -67,9 +67,9 @@ architecture arch of top is
   -- memory signals
   signal busy  : std_logic;
   signal ready : std_logic;
-  signal addr  : std_logic_vector(24 downto 0);
-  signal din   : std_logic_vector(15 downto 0) := (others => '0');
-  signal dout  : std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
+  signal addr  : std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
+  signal din   : std_logic_vector(SDRAM_DIN_WIDTH-1 downto 0) := (others => '0');
+  signal dout  : std_logic_vector(SDRAM_DOUT_WIDTH-1 downto 0);
   signal rden  : std_logic;
   signal wren  : std_logic;
 begin
@@ -110,15 +110,6 @@ begin
     sdram_dq    => sdram_dq
   );
 
-  latch_state : process (clk, reset)
-  begin
-    if reset = '1' then
-      state <= WRITE;
-    elsif rising_edge(clk) then
-      state <= next_state;
-    end if;
-  end process;
-
   fsm : process (state, n, busy)
   begin
     next_state <= state;
@@ -144,6 +135,15 @@ begin
           next_state <= READ;
         end if;
     end case;
+  end process;
+
+  latch_state : process (clk, reset)
+  begin
+    if reset = '1' then
+      state <= WRITE;
+    elsif rising_edge(clk) then
+      state <= next_state;
+    end if;
   end process;
 
   update_counter : process (clk, reset)

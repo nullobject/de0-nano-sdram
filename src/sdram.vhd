@@ -21,7 +21,6 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
-use ieee.math_real.all;
 
 use work.types.all;
 
@@ -45,10 +44,10 @@ entity sdram is
     addr : in std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
 
     -- data in
-    din : in std_logic_vector(15 downto 0);
+    din : in std_logic_vector(SDRAM_DIN_WIDTH-1 downto 0);
 
     -- data out
-    dout : out std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
+    dout : out std_logic_vector(SDRAM_DOUT_WIDTH-1 downto 0);
 
     -- read enable
     rden : in std_logic;
@@ -90,7 +89,7 @@ architecture arch of sdram is
 
   -- the delay in clock cycles, between the start of a read command and the
   -- availability of the output data
-  constant CAS_LATENCY : natural := 2; -- 2=below 100MHz, 3=above 100MHz
+  constant CAS_LATENCY : natural := 2; -- 2=below 133MHz, 3=above 133MHz
 
   -- the write burst mode toggles bursting during a write command
   constant WRITE_BURST_MODE : std_logic := '1'; -- 0=burst, 1=single
@@ -102,12 +101,13 @@ architecture arch of sdram is
     "00" &
     std_logic_vector(to_unsigned(CAS_LATENCY, 3)) &
     BURST_TYPE &
-    std_logic_vector(to_unsigned(natural(log2(real(BURST_LENGTH))), 3))
+    std_logic_vector(to_unsigned(ilog2(BURST_LENGTH), 3))
   );
 
   -- The minimum number of clock ticks between each auto refresh command. The
   -- datasheet specifies that the auto refresh command needs to be executed
-  -- 8192 times every 64ms.
+  -- 8192 times every 64ms. This value has been calculated for a 100MHz clock
+  -- frequency.
   constant TICKS_PER_REFRESH : natural := 781;
 
   constant COL_WIDTH  : natural := 9;
@@ -124,8 +124,8 @@ architecture arch of sdram is
 
   -- registers
   signal addr_reg  : std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
-  signal din_reg   : std_logic_vector(15 downto 0);
-  signal dout_reg  : std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
+  signal din_reg   : std_logic_vector(SDRAM_DIN_WIDTH-1 downto 0);
+  signal dout_reg  : std_logic_vector(SDRAM_DOUT_WIDTH-1 downto 0);
   signal wren_reg  : std_logic;
 
   -- counters
@@ -133,9 +133,9 @@ architecture arch of sdram is
   signal refresh_counter : natural range 0 to 1023;
 
   -- aliases to decode the address register
-  alias col  : std_logic_vector(COL_WIDTH-1 downto 0) is addr_reg(8 downto 0);
-  alias row  : std_logic_vector(ROW_WIDTH-1 downto 0) is addr_reg(22 downto 10);
-  alias bank : std_logic_vector(BANK_WIDTH-1 downto 0) is addr_reg(24 downto 23);
+  alias col  : std_logic_vector(COL_WIDTH-1 downto 0) is addr_reg(COL_WIDTH-1 downto 0);
+  alias row  : std_logic_vector(ROW_WIDTH-1 downto 0) is addr_reg(COL_WIDTH+ROW_WIDTH-1 downto COL_WIDTH);
+  alias bank : std_logic_vector(BANK_WIDTH-1 downto 0) is addr_reg(COL_WIDTH+ROW_WIDTH+BANK_WIDTH-1 downto COL_WIDTH+ROW_WIDTH);
 begin
   -- state machine
   fsm : process (state, cmd, wait_counter, refresh_counter, rden, wren, wren_reg)
@@ -239,13 +239,14 @@ begin
 
   -- Update the refresh counter.
   --
-  -- The refresh counter is cleared once an auto refresh command is executed.
+  -- The refresh counter is used to periodically trigger an auto refresh
+  -- command.
   update_refresh_counter : process (clk, reset)
   begin
     if reset = '1' then
       refresh_counter <= 0;
     elsif rising_edge(clk) then
-      if state = REFRESH then
+      if state = REFRESH then -- clear on refresh
         refresh_counter <= 0;
       else
         refresh_counter <= refresh_counter + 1;
@@ -277,7 +278,7 @@ begin
     if rising_edge(clk) then
       if state = READ_WAIT then
         case wait_counter is
-          when CAS_LATENCY-1 => dout_reg(15 downto  0) <= sdram_dq; -- first word
+          when CAS_LATENCY-1 => dout_reg(15 downto 0)  <= sdram_dq; -- first word
           when CAS_LATENCY-0 => dout_reg(31 downto 16) <= sdram_dq; -- second word
           when others => null;
         end case;
@@ -316,7 +317,7 @@ begin
 	-- set SDRAM control signals
   (sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n) <= cmd;
 
-  -- the memory controller is busy, unless we're in the IDLE state
+  -- the memory controller is busy unless we're in the IDLE state
   busy  <= '1' when state /= IDLE else '0';
 
   -- the output data is ready after all the CAS latency delay has elapsed
