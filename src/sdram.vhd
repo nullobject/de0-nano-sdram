@@ -21,6 +21,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use ieee.math_real.all;
 
 use work.types.all;
 
@@ -81,18 +82,18 @@ architecture arch of sdram is
   constant CMD_NOP          : std_logic_vector(3 downto 0) := "0111";
   constant CMD_INHIBIT      : std_logic_vector(3 downto 0) := "1000";
 
-  -- the number of words to read in a burst
-  constant BURST_LENGTH : unsigned(2 downto 0) := "001"; -- 000=1, 001=2, 010=4, 011=8
+  -- the number of words in a burst
+  constant BURST_LENGTH : natural := 2;
 
   -- the ordering of the accesses within a burst
-  constant BURST_TYPE : std_logic_vector(0 downto 0) := "0"; -- 0=sequential, 1=interleaved
+  constant BURST_TYPE : std_logic := '0'; -- 0=sequential, 1=interleaved
 
   -- the delay in clock cycles, between the start of a read command and the
   -- availability of the output data
   constant CAS_LATENCY : natural := 2; -- 2=below 100MHz, 3=above 100MHz
 
   -- the write burst mode toggles bursting during a write command
-  constant WRITE_BURST_MODE : std_logic_vector(0 downto 0) := "1"; -- 0=burst, 1=single
+  constant WRITE_BURST_MODE : std_logic := '1'; -- 0=burst, 1=single
 
   -- the value written to the mode register to configure the memory
   constant MODE : std_logic_vector(12 downto 0) := (
@@ -101,7 +102,7 @@ architecture arch of sdram is
     "00" &
     std_logic_vector(to_unsigned(CAS_LATENCY, 3)) &
     BURST_TYPE &
-    std_logic_vector(BURST_LENGTH)
+    std_logic_vector(to_unsigned(natural(log2(real(BURST_LENGTH))), 3))
   );
 
   -- The minimum number of clock ticks between each auto refresh command. The
