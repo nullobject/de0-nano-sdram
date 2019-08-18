@@ -22,6 +22,8 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
+use work.types.all;
+
 entity top is
   port (
     -- 50MHz clock
@@ -67,7 +69,7 @@ architecture arch of top is
   signal ready : std_logic;
   signal addr  : std_logic_vector(24 downto 0);
   signal din   : std_logic_vector(15 downto 0) := (others => '0');
-  signal dout  : std_logic_vector(15 downto 0);
+  signal dout  : std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
   signal rden  : std_logic;
   signal wren  : std_logic;
 begin

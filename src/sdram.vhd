@@ -82,14 +82,14 @@ architecture arch of sdram is
   constant CMD_INHIBIT      : std_logic_vector(3 downto 0) := "1000";
 
   -- the number of words to read in a burst
-  constant BURST_LENGTH : unsigned(2 downto 0) := "000"; -- 000=1, 001=2, 010=4, 011=8
+  constant BURST_LENGTH : unsigned(2 downto 0) := "001"; -- 000=1, 001=2, 010=4, 011=8
 
   -- the ordering of the accesses within a burst
   constant BURST_TYPE : std_logic_vector(0 downto 0) := "0"; -- 0=sequential, 1=interleaved
 
   -- the delay in clock cycles, between the start of a read command and the
   -- availability of the output data
-  constant CAS_LATENCY : unsigned(2 downto 0) := "010"; -- 010=below 100MHz, 011=above 100MHz
+  constant CAS_LATENCY : natural := 2; -- 2=below 100MHz, 3=above 100MHz
 
   -- the write burst mode toggles bursting during a write command
   constant WRITE_BURST_MODE : std_logic_vector(0 downto 0) := "1"; -- 0=burst, 1=single
@@ -99,7 +99,7 @@ architecture arch of sdram is
     "000" &
     WRITE_BURST_MODE &
     "00" &
-    std_logic_vector(CAS_LATENCY) &
+    std_logic_vector(to_unsigned(CAS_LATENCY, 3)) &
     BURST_TYPE &
     std_logic_vector(BURST_LENGTH)
   );
@@ -126,7 +126,6 @@ architecture arch of sdram is
   signal din_reg   : std_logic_vector(15 downto 0);
   signal dout_reg  : std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
   signal wren_reg  : std_logic;
-  signal ready_reg : std_logic;
 
   -- counters
   signal wait_counter    : natural range 0 to 31;
@@ -138,7 +137,7 @@ architecture arch of sdram is
   alias bank : std_logic_vector(BANK_WIDTH-1 downto 0) is addr_reg(24 downto 23);
 begin
   -- state machine
-  fsm : process (state, cmd, wait_counter, refresh_counter, rden, wren, wren_reg, ready_reg)
+  fsm : process (state, cmd, wait_counter, refresh_counter, rden, wren, wren_reg)
   begin
     next_state <= state;
 
@@ -199,7 +198,7 @@ begin
 
       -- wait for the read to complete
       when READ_WAIT =>
-        if ready_reg = '1' then
+        if wait_counter = CAS_LATENCY then
           next_state <= IDLE;
         end if;
 
@@ -268,12 +267,19 @@ begin
     end if;
   end process;
 
-  -- latch the data once the read operation has completed
+  -- Latch the output data.
+  --
+  -- We need to latch the words from the SDRAM into the output register, as
+  -- data is bursted.
   latch_read_data : process (clk)
   begin
     if rising_edge(clk) then
-      if ready_reg = '1' then
-        dout_reg <= sdram_dq;
+      if state = READ_WAIT then
+        case wait_counter is
+          when CAS_LATENCY-1 => dout_reg(15 downto  0) <= sdram_dq; -- first word
+          when CAS_LATENCY-0 => dout_reg(31 downto 16) <= sdram_dq; -- second word
+          when others => null;
+        end case;
       end if;
     end if;
   end process;
@@ -283,9 +289,6 @@ begin
 
   -- deassert the clock enable at the beginning of the initialisation sequence
   sdram_cke <= '0' when state = INIT and wait_counter = 0 else '1';
-
-  -- the SDRAM data is ready after the CAS latency has elapsed
-  ready_reg <= '1' when state = READ_WAIT and wait_counter >= CAS_LATENCY-1 else '0';
 
   -- set SDRAM bank
   with state select
@@ -312,8 +315,12 @@ begin
 	-- set SDRAM control signals
   (sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n) <= cmd;
 
-  -- set output signals
+  -- the memory controller is busy, unless we're in the IDLE state
   busy  <= '1' when state /= IDLE else '0';
-  ready <= ready_reg;
+
+  -- the output data is ready after all the CAS latency delay has elapsed
+  ready <= '1' when state = READ_WAIT and wait_counter = CAS_LATENCY else '0';
+
+  -- set output data
   dout  <= dout_reg;
 end architecture arch;

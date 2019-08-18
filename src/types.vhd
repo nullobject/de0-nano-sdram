@@ -24,5 +24,5 @@ use ieee.numeric_std.all;
 
 package types is
   constant SDRAM_ADDR_WIDTH : natural := 25;
-  constant SDRAM_DATA_WIDTH : natural := 16;
+  constant SDRAM_DATA_WIDTH : natural := 32;
 end package types;
