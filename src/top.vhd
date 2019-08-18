@@ -66,7 +66,6 @@ architecture arch of top is
 
   -- memory signals
   signal busy  : std_logic;
-  signal ready : std_logic;
   signal addr  : std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
   signal din   : std_logic_vector(SDRAM_DIN_WIDTH-1 downto 0) := (others => '0');
   signal dout  : std_logic_vector(SDRAM_DOUT_WIDTH-1 downto 0);
@@ -87,8 +86,7 @@ begin
     clk   => clk,
 
     -- control signals
-    busy  => busy,
-    ready => ready,
+    busy => busy,
 
     -- IO port
     addr => addr,

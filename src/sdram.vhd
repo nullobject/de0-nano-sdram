@@ -37,9 +37,6 @@ entity sdram is
     -- asserted when there is a pending operation
     busy : out std_logic;
 
-    -- asserted when the current operation has completed
-    ready : out std_logic;
-
     -- address
     addr : in std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
 
@@ -277,11 +274,11 @@ begin
   begin
     if rising_edge(clk) then
       if state = READ_WAIT then
-        case wait_counter is
-          when CAS_LATENCY-1 => dout_reg(15 downto 0)  <= sdram_dq; -- first word
-          when CAS_LATENCY-0 => dout_reg(31 downto 16) <= sdram_dq; -- second word
-          when others => null;
-        end case;
+        if wait_counter = CAS_LATENCY-1 then -- first word
+          dout_reg(15 downto 0) <= sdram_dq;
+        elsif wait_counter = CAS_LATENCY-0 then -- last word
+          dout_reg(31 downto 16) <= sdram_dq;
+        end if;
       end if;
     end if;
   end process;
@@ -310,18 +307,17 @@ begin
       "0010" & col    when WRITE, -- auto precharge
       (others => '0') when others;
 
-  -- set SDRAM data bus if we're writing, otherwise put it into a high impedance state
+  -- set SDRAM data mask
   sdram_dqm <= "00";
+
+  -- set SDRAM data bus if we're writing, otherwise put it into a high impedance state
   sdram_dq <= din_reg when state = WRITE else (others => 'Z');
 
 	-- set SDRAM control signals
   (sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n) <= cmd;
 
   -- the memory controller is busy unless we're in the IDLE state
-  busy  <= '1' when state /= IDLE else '0';
-
-  -- the output data is ready after all the CAS latency delay has elapsed
-  ready <= '1' when state = READ_WAIT and wait_counter = CAS_LATENCY else '0';
+  busy <= '1' when state /= IDLE else '0';
 
   -- set output data
   dout  <= dout_reg;
