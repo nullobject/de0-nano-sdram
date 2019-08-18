@@ -24,12 +24,6 @@ use ieee.numeric_std.all;
 
 -- This module implements a memory controller for a 16Mx16 SDRAM memory module.
 entity sdram is
-  generic (
-    BURST_LENGTH     : std_logic_vector(2 downto 0) := "000"; -- 000=1, 001=2, 010=4, 011=8
-    BURST_TYPE       : std_logic_vector(0 downto 0) := "0";   -- 0=sequential, 1=interleaved
-    CAS_LATENCY      : std_logic_vector(2 downto 0) := "010"; -- 010=below 100MHz, 011=above 100MHz
-    WRITE_BURST_MODE : std_logic_vector(0 downto 0) := "1"    -- 0=burst, 1=single bit
-  );
   port (
     -- reset
     reset : in std_logic;
@@ -85,8 +79,28 @@ architecture arch of sdram is
   constant CMD_NOP          : std_logic_vector(3 downto 0) := "0111";
   constant CMD_INHIBIT      : std_logic_vector(3 downto 0) := "1000";
 
+  -- the number of words to read in a burst
+  constant BURST_LENGTH : unsigned(2 downto 0) := "000"; -- 000=1, 001=2, 010=4, 011=8
+
+  -- the ordering of the accesses within a burst
+  constant BURST_TYPE : std_logic_vector(0 downto 0) := "0"; -- 0=sequential, 1=interleaved
+
+  -- the delay in clock cycles, between the start of a read command and the
+  -- availability of the output data
+  constant CAS_LATENCY : unsigned(2 downto 0) := "010"; -- 010=below 100MHz, 011=above 100MHz
+
+  -- the write burst mode toggles bursting during a write command
+  constant WRITE_BURST_MODE : std_logic_vector(0 downto 0) := "1"; -- 0=burst, 1=single
+
   -- the value written to the mode register to configure the memory
-  constant MODE : std_logic_vector(12 downto 0) := "000" & WRITE_BURST_MODE & "00" & CAS_LATENCY & BURST_TYPE & BURST_LENGTH;
+  constant MODE : std_logic_vector(12 downto 0) := (
+    "000" &
+    WRITE_BURST_MODE &
+    "00" &
+    std_logic_vector(CAS_LATENCY) &
+    BURST_TYPE &
+    std_logic_vector(BURST_LENGTH)
+  );
 
   -- The minimum number of clock ticks between each auto refresh command. The
   -- datasheet specifies that the auto refresh command needs to be executed
@@ -181,7 +195,7 @@ begin
       when READ =>
         next_state <= READ_WAIT;
 
-      -- wait for the read command to complete
+      -- wait for the read to complete
       when READ_WAIT =>
         if ready_reg = '1' then
           next_state <= IDLE;
@@ -269,7 +283,7 @@ begin
   sdram_cke <= '0' when state = INIT and wait_counter = 0 else '1';
 
   -- the SDRAM data is ready after the CAS latency has elapsed
-  ready_reg <= '1' when state = READ_WAIT and wait_counter >= unsigned(CAS_LATENCY)-1 else '0';
+  ready_reg <= '1' when state = READ_WAIT and wait_counter >= CAS_LATENCY-1 else '0';
 
   -- set SDRAM bank
   with state select
