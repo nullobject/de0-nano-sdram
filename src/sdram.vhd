@@ -22,6 +22,8 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
+use work.types.all;
+
 -- This module implements a memory controller for a 16Mx16 SDRAM memory module.
 entity sdram is
   port (
@@ -39,13 +41,13 @@ entity sdram is
     ready : out std_logic;
 
     -- address
-    addr : in std_logic_vector(24 downto 0);
+    addr : in std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
 
     -- data in
     din : in std_logic_vector(15 downto 0);
 
     -- data out
-    dout : out std_logic_vector(15 downto 0);
+    dout : out std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
 
     -- read enable
     rden : in std_logic;
@@ -120,9 +122,9 @@ architecture arch of sdram is
   signal cmd, next_cmd : std_logic_vector(3 downto 0) := CMD_NOP;
 
   -- registers
-  signal addr_reg  : std_logic_vector(24 downto 0);
+  signal addr_reg  : std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
   signal din_reg   : std_logic_vector(15 downto 0);
-  signal dout_reg  : std_logic_vector(15 downto 0);
+  signal dout_reg  : std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
   signal wren_reg  : std_logic;
   signal ready_reg : std_logic;
 
@@ -266,8 +268,8 @@ begin
     end if;
   end process;
 
-  -- latch the SDRAM data once the read operation has completed
-  latch_sdram_data : process (clk)
+  -- latch the data once the read operation has completed
+  latch_read_data : process (clk)
   begin
     if rising_edge(clk) then
       if ready_reg = '1' then

@@ -116,6 +116,7 @@ set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
 
 set_global_assignment -name VHDL_FILE src/top.vhd
 set_global_assignment -name VHDL_FILE src/sdram.vhd
+set_global_assignment -name VHDL_FILE src/types.vhd
 set_global_assignment -name SDC_FILE src/sdram.sdc
 # set_global_assignment -name QIP_FILE src/pll.qip
 
