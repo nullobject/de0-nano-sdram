@@ -25,6 +25,9 @@ use ieee.numeric_std.all;
 use work.types.all;
 
 -- This module implements a memory controller for a 16Mx16 SDRAM memory module.
+--
+-- The ready signal is asserted when the memory controller is ready to execute
+-- a read or write operation.
 entity sdram is
   port (
     -- reset
@@ -33,25 +36,14 @@ entity sdram is
     -- clock
     clk : in std_logic;
 
-    -- clock enable
-    cke : in std_logic := '1';
+    -- control signals
+    ready : out std_logic;
 
-    -- asserted when there is a pending operation
-    busy : out std_logic;
-
-    -- address
+    -- IO interface
     addr : in std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-
-    -- data in
     din : in std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
-
-    -- data out
     dout : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-
-    -- read enable
     rden : in std_logic;
-
-    -- write enable
     wren : in std_logic;
 
     -- SDRAM interface
@@ -170,13 +162,13 @@ begin
           next_cmd   <= CMD_ACTIVE;
         end if;
 
-      -- execute an auto refresh command
+      -- execute an auto refresh
       when REFRESH =>
         if wait_counter = 8 then
           next_state <= IDLE;
         end if;
 
-      -- begin the read/write command
+      -- activate the row
       when ACTIVE =>
         if wait_counter = 1 then
           if wren_reg = '1' then
@@ -205,7 +197,7 @@ begin
   end process;
 
   -- latch the next state
-  latch_state : process (clk, reset)
+  latch_next_state : process (clk, reset)
   begin
     if reset = '1' then
       state <= INIT;
@@ -224,7 +216,7 @@ begin
     if reset = '1' then
       wait_counter <= 0;
     elsif rising_edge(clk) then
-      if state /= next_state then -- state is changing
+      if state /= next_state then -- state changing
         wait_counter <= 0;
       else
         wait_counter <= wait_counter + 1;
@@ -241,7 +233,7 @@ begin
     if reset = '1' then
       refresh_counter <= 0;
     elsif rising_edge(clk) then
-      if state = REFRESH then -- clear on refresh
+      if state = REFRESH then
         refresh_counter <= 0;
       else
         refresh_counter <= refresh_counter + 1;
@@ -308,14 +300,14 @@ begin
   -- set SDRAM data mask
   sdram_dqm <= (others => '0');
 
-  -- set SDRAM data bus if we're writing, otherwise put it into a high impedance state
+  -- set SDRAM input data if we're writing, otherwise put it into a high impedance state
   sdram_dq <= din_reg when state = WRITE else (others => 'Z');
 
 	-- set SDRAM control signals
   (sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n) <= cmd;
 
-  -- the memory controller is busy unless we're in the IDLE state
-  busy <= '1' when state /= IDLE else '0';
+  -- the memory controller is ready if we're in the IDLE state
+  ready <= '1' when state = IDLE else '0';
 
   -- set output data
   dout  <= dout_reg;
