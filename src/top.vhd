@@ -35,7 +35,7 @@ entity top is
     -- LEDs
     led : out std_logic_vector(7 downto 0);
 
-    -- SDRAM
+    -- SDRAM interface
     sdram_a     : out std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
     sdram_dq    : inout std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
     sdram_dqm   : out std_logic_vector(SDRAM_DATA_MASK_WIDTH-1 downto 0);
@@ -50,27 +50,35 @@ entity top is
 end top;
 
 architecture arch of top is
-  type state_t is (WRITE, WAIT_FOR_WRITE, READ, WAIT_FOR_READ);
-
-  -- state signals
-  signal state, next_state : state_t;
-
-  signal reset : std_logic;
+  type state_t is (READ, READ_WAIT, WRITE, WRITE_WAIT);
 
   -- clock signals
   -- signal clk_5      : std_logic;
   -- signal pll_locked : std_logic;
 
-  -- counter
-  signal n : unsigned(7 downto 0);
+  signal reset : std_logic;
 
-  -- memory signals
-  signal busy  : std_logic;
-  signal addr  : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-  signal din   : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0) := (others => '0');
-  signal dout  : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-  signal rden  : std_logic;
-  signal wren  : std_logic;
+  -- state signals
+  signal state, next_state : state_t;
+
+  -- counters
+  signal wait_counter : natural range 0 to 31;
+  signal data_counter : natural range 0 to 255;
+
+  -- IO signals
+  signal ioctl_addr : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
+  signal ioctl_data : byte_t;
+  signal ioctl_wren : std_logic;
+
+  -- ROM signals
+  signal sprite_addr : std_logic_vector(SPRITE_ROM_ADDR_WIDTH-1 downto 0);
+  signal sprite_data : byte_t;
+  signal char_addr   : std_logic_vector(CHAR_ROM_ADDR_WIDTH-1 downto 0);
+  signal char_data   : byte_t;
+  signal fg_addr     : std_logic_vector(FG_ROM_ADDR_WIDTH-1 downto 0);
+  signal fg_data     : byte_t;
+  signal bg_addr     : std_logic_vector(BG_ROM_ADDR_WIDTH-1 downto 0);
+  signal bg_data     : byte_t;
 begin
   -- pll : entity work.pll
   -- port map (
@@ -79,23 +87,28 @@ begin
   --   locked => pll_locked
   -- );
 
-  -- SDRAM controller
-  sdram : entity work.sdram
+  -- ROM controller
+  rom_controller : entity work.rom_controller
   port map (
     reset => reset,
     clk   => clk,
 
-    -- control signals
-    busy => busy,
+    -- write interface
+    ioctl_addr => ioctl_addr,
+    ioctl_data => ioctl_data,
+    ioctl_wren => ioctl_wren,
 
-    -- IO port
-    addr => addr,
-    din  => din,
-    dout => dout,
-    rden => rden,
-    wren => wren,
+    -- read interface
+    sprite_addr => sprite_addr,
+    sprite_data => sprite_data,
+    char_addr   => char_addr,
+    char_data   => char_data,
+    fg_addr     => fg_addr,
+    fg_data     => fg_data,
+    bg_addr     => bg_addr,
+    bg_data     => bg_data,
 
-    -- SDRAM signals
+    -- SDRAM interface
     sdram_clk   => sdram_clk,
     sdram_cke   => sdram_cke,
     sdram_cs_n  => sdram_cs_n,
@@ -108,49 +121,74 @@ begin
     sdram_dq    => sdram_dq
   );
 
-  fsm : process (state, n, busy)
+  -- state machine
+  fsm : process (state, wait_counter, data_counter)
   begin
     next_state <= state;
 
     case state is
-      when WRITE =>
-        next_state <= WAIT_FOR_WRITE;
+      when READ =>
+        next_state <= READ_WAIT;
 
-      when WAIT_FOR_WRITE =>
-        if n = 255 then
-          next_state <= READ;
-        elsif busy = '0' then
-          next_state <= WRITE;
+      when READ_WAIT =>
+        if wait_counter = 6 then
+          if data_counter = 63 then
+            next_state <= WRITE;
+          else
+            next_state <= READ;
+          end if;
         end if;
 
-      when READ =>
-        next_state <= WAIT_FOR_READ;
+      when WRITE =>
+        next_state <= WRITE_WAIT;
 
-      when WAIT_FOR_READ =>
-        if n = 255 then
-          next_state <= WRITE;
-        elsif busy = '0' then
-          next_state <= READ;
+      when WRITE_WAIT =>
+        if wait_counter = 3 then
+          if data_counter = 255 then
+            next_state <= READ;
+          else
+            next_state <= WRITE;
+          end if;
         end if;
     end case;
   end process;
 
-  latch_state : process (clk, reset)
+  -- latch the next state
+  latch_next_state : process (clk, reset)
   begin
     if reset = '1' then
-      state <= WRITE;
+      state <= READ;
     elsif rising_edge(clk) then
       state <= next_state;
     end if;
   end process;
 
-  update_counter : process (clk, reset)
+  update_wait_counter : process (clk, reset)
   begin
     if reset = '1' then
-      n <= (others => '0');
+      wait_counter <= 0;
     elsif rising_edge(clk) then
-      if state = WRITE or state = READ then
-        n <= n + 1;
+      if state /= next_state then -- state changing
+        wait_counter <= 0;
+      else
+        wait_counter <= wait_counter + 1;
+      end if;
+    end if;
+  end process;
+
+  update_data_counter : process (clk, reset)
+  begin
+    if reset = '1' then
+      data_counter <= 0;
+    elsif rising_edge(clk) then
+      if state = READ_WAIT and next_state /= READ_WAIT then -- leaving the READ_WAIT state
+        if data_counter = 63 then
+          data_counter <= 0;
+        else
+          data_counter <= data_counter + 1;
+        end if;
+      elsif state = WRITE_WAIT and next_state /= WRITE_WAIT then -- leaving the WRITE_WAIT state
+        data_counter <= data_counter + 1;
       end if;
     end if;
   end process;
@@ -158,11 +196,17 @@ begin
   -- reset <= not pll_locked;
   reset <= not key(0);
 
-  wren <= '1' when state = WRITE else '0';
-  rden <= '1' when state = READ else '0';
-  addr <= std_logic_vector(resize(n, addr'length));
-  din(7 downto 0) <= std_logic_vector(n) when state = WRITE else (others => '0');
+  -- set IOCTL signals
+  ioctl_addr <= std_logic_vector(to_unsigned(data_counter, ioctl_addr'length));
+  ioctl_data <= std_logic_vector(to_unsigned(data_counter, ioctl_data'length));
+  ioctl_wren <= '1' when state = WRITE else '0';
 
-  -- output
-  led <= dout(7 downto 0);
+  -- set ROM signals
+  sprite_addr <= std_logic_vector(to_unsigned(data_counter, sprite_addr'length));
+  char_addr   <= std_logic_vector(to_unsigned(data_counter, char_addr'length));
+  fg_addr     <= std_logic_vector(to_unsigned(data_counter, fg_addr'length));
+  bg_addr     <= std_logic_vector(to_unsigned(data_counter, bg_addr'length));
+
+  -- set output data
+  led <= sprite_data;
 end architecture arch;

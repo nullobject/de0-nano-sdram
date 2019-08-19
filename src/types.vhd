@@ -33,9 +33,16 @@ package types is
   constant SDRAM_ROW_WIDTH       : natural := 13;
 
   -- IO interface
-  constant SDRAM_INPUT_ADDR_WIDTH  : natural := 24;
+  constant SDRAM_INPUT_ADDR_WIDTH  : natural := 25; -- 32MB
   constant SDRAM_INPUT_DATA_WIDTH  : natural := 16;
   constant SDRAM_OUTPUT_DATA_WIDTH : natural := 32;
+
+  constant CHAR_ROM_ADDR_WIDTH   : natural := 6; -- 32kB
+  constant FG_ROM_ADDR_WIDTH     : natural := 6; -- 128kB
+  constant BG_ROM_ADDR_WIDTH     : natural := 6; -- 128kB
+  constant SPRITE_ROM_ADDR_WIDTH : natural := 6; -- 128kB
+
+  subtype byte_t is std_logic_vector(7 downto 0);
 
   -- calculates the log2 of the given number
   function ilog2(n : natural) return natural;
