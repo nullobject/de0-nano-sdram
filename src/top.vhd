@@ -36,10 +36,10 @@ entity top is
     led : out std_logic_vector(7 downto 0);
 
     -- SDRAM
-    sdram_a     : out std_logic_vector(12 downto 0);
-    sdram_dq    : inout std_logic_vector(15 downto 0);
-    sdram_dqm   : out std_logic_vector(1 downto 0);
-    sdram_ba    : out std_logic_vector(1 downto 0);
+    sdram_a     : out std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
+    sdram_dq    : inout std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
+    sdram_dqm   : out std_logic_vector(SDRAM_DATA_MASK_WIDTH-1 downto 0);
+    sdram_ba    : out std_logic_vector(SDRAM_BANK_WIDTH-1 downto 0);
     sdram_cas_n : out std_logic;
     sdram_cke   : out std_logic;
     sdram_cs_n  : out std_logic;
@@ -66,9 +66,9 @@ architecture arch of top is
 
   -- memory signals
   signal busy  : std_logic;
-  signal addr  : std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
-  signal din   : std_logic_vector(SDRAM_DIN_WIDTH-1 downto 0) := (others => '0');
-  signal dout  : std_logic_vector(SDRAM_DOUT_WIDTH-1 downto 0);
+  signal addr  : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
+  signal din   : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0) := (others => '0');
+  signal dout  : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
   signal rden  : std_logic;
   signal wren  : std_logic;
 begin

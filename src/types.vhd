@@ -24,10 +24,20 @@ use ieee.numeric_std.all;
 use ieee.math_real.all;
 
 package types is
-  constant SDRAM_ADDR_WIDTH : natural := 24;
-  constant SDRAM_DIN_WIDTH  : natural := 16;
-  constant SDRAM_DOUT_WIDTH : natural := 32;
+  -- SDRAM interface
+  constant SDRAM_BANK_WIDTH      : natural := 2;
+  constant SDRAM_ADDR_WIDTH      : natural := 13;
+  constant SDRAM_DATA_WIDTH      : natural := 16;
+  constant SDRAM_DATA_MASK_WIDTH : natural := 2;
+  constant SDRAM_COL_WIDTH       : natural := 9;
+  constant SDRAM_ROW_WIDTH       : natural := 13;
 
+  -- IO interface
+  constant SDRAM_INPUT_ADDR_WIDTH  : natural := 24;
+  constant SDRAM_INPUT_DATA_WIDTH  : natural := 16;
+  constant SDRAM_OUTPUT_DATA_WIDTH : natural := 32;
+
+  -- calculates the log2 of the given number
   function ilog2(n : natural) return natural;
 end package types;
 

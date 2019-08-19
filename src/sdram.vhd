@@ -30,21 +30,23 @@ entity sdram is
     -- reset
     reset : in std_logic;
 
-    -- clock signals
+    -- clock
     clk : in std_logic;
+
+    -- clock enable
     cke : in std_logic := '1';
 
     -- asserted when there is a pending operation
     busy : out std_logic;
 
     -- address
-    addr : in std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
+    addr : in std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
 
     -- data in
-    din : in std_logic_vector(SDRAM_DIN_WIDTH-1 downto 0);
+    din : in std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
 
     -- data out
-    dout : out std_logic_vector(SDRAM_DOUT_WIDTH-1 downto 0);
+    dout : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
 
     -- read enable
     rden : in std_logic;
@@ -59,10 +61,10 @@ entity sdram is
     sdram_ras_n : out std_logic;
     sdram_cas_n : out std_logic;
     sdram_we_n  : out std_logic;
-    sdram_ba    : out std_logic_vector(1 downto 0);
-    sdram_a     : out std_logic_vector(12 downto 0);
-    sdram_dqm   : out std_logic_vector(1 downto 0);
-    sdram_dq    : inout std_logic_vector(15 downto 0)
+    sdram_ba    : out std_logic_vector(SDRAM_BANK_WIDTH-1 downto 0);
+    sdram_a     : out std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
+    sdram_dqm   : out std_logic_vector(SDRAM_DATA_MASK_WIDTH-1 downto 0);
+    sdram_dq    : inout std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0)
   );
 end sdram;
 
@@ -92,7 +94,7 @@ architecture arch of sdram is
   constant WRITE_BURST_MODE : std_logic := '1'; -- 0=burst, 1=single
 
   -- the value written to the mode register to configure the memory
-  constant MODE : std_logic_vector(12 downto 0) := (
+  constant MODE : std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0) := (
     "000" &
     WRITE_BURST_MODE &
     "00" &
@@ -107,10 +109,6 @@ architecture arch of sdram is
   -- frequency.
   constant TICKS_PER_REFRESH : natural := 781;
 
-  constant COL_WIDTH  : natural := 9;
-  constant ROW_WIDTH  : natural := 13;
-  constant BANK_WIDTH : natural := 2;
-
   type state_t is (INIT, LOAD_MODE, IDLE, ACTIVE, READ, READ_WAIT, WRITE, REFRESH);
 
   -- state signals
@@ -120,19 +118,19 @@ architecture arch of sdram is
   signal cmd, next_cmd : std_logic_vector(3 downto 0) := CMD_NOP;
 
   -- registers
-  signal addr_reg  : std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
-  signal din_reg   : std_logic_vector(SDRAM_DIN_WIDTH-1 downto 0);
-  signal dout_reg  : std_logic_vector(SDRAM_DOUT_WIDTH-1 downto 0);
-  signal wren_reg  : std_logic;
+  signal addr_reg : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
+  signal din_reg  : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
+  signal dout_reg : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+  signal wren_reg : std_logic;
 
   -- counters
   signal wait_counter    : natural range 0 to 31;
   signal refresh_counter : natural range 0 to 1023;
 
   -- aliases to decode the address register
-  alias col  : std_logic_vector(COL_WIDTH-1 downto 0) is addr_reg(COL_WIDTH-1 downto 0);
-  alias row  : std_logic_vector(ROW_WIDTH-1 downto 0) is addr_reg(COL_WIDTH+ROW_WIDTH-1 downto COL_WIDTH);
-  alias bank : std_logic_vector(BANK_WIDTH-1 downto 0) is addr_reg(COL_WIDTH+ROW_WIDTH+BANK_WIDTH-1 downto COL_WIDTH+ROW_WIDTH);
+  alias col  : std_logic_vector(SDRAM_COL_WIDTH-1 downto 0) is addr_reg(SDRAM_COL_WIDTH-1 downto 0);
+  alias row  : std_logic_vector(SDRAM_ROW_WIDTH-1 downto 0) is addr_reg(SDRAM_COL_WIDTH+SDRAM_ROW_WIDTH-1 downto SDRAM_COL_WIDTH);
+  alias bank : std_logic_vector(SDRAM_BANK_WIDTH-1 downto 0) is addr_reg(SDRAM_COL_WIDTH+SDRAM_ROW_WIDTH+SDRAM_BANK_WIDTH-1 downto SDRAM_COL_WIDTH+SDRAM_ROW_WIDTH);
 begin
   -- state machine
   fsm : process (state, cmd, wait_counter, refresh_counter, rden, wren, wren_reg)
@@ -308,7 +306,7 @@ begin
       (others => '0') when others;
 
   -- set SDRAM data mask
-  sdram_dqm <= "00";
+  sdram_dqm <= (others => '0');
 
   -- set SDRAM data bus if we're writing, otherwise put it into a high impedance state
   sdram_dq <= din_reg when state = WRITE else (others => 'Z');
