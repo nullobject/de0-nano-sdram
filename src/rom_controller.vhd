@@ -68,11 +68,11 @@ architecture arch of rom_controller is
   -- state signals
   signal state, next_state : state_t;
 
-  -- ROM signals
-  signal current_rom : rom_t;
-
   -- control signals
   signal read_done : std_logic;
+
+  -- ROM signals
+  signal current_rom : rom_t;
 
   -- segment signals
   signal sprite_rom_cs         : std_logic;
@@ -217,7 +217,7 @@ begin
   -- the read is done when the SDRAM ready signal is asserted
   read_done <= '1' when state = READ_WAIT and sdram_ready = '1' else '0';
 
-  -- set the segment chip select signals
+  -- set the chip select signals
   sprite_rom_cs <= '1' when current_rom = SPRITE_ROM else '0';
   char_rom_cs   <= '1' when current_rom = CHAR_ROM   else '0';
   fg_rom_cs     <= '1' when current_rom = FG_ROM     else '0';

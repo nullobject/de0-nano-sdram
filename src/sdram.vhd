@@ -109,16 +109,16 @@ architecture arch of sdram is
   -- command signals
   signal cmd, next_cmd : std_logic_vector(3 downto 0) := CMD_NOP;
 
+  -- counters
+  signal wait_counter    : natural range 0 to 31;
+  signal refresh_counter : natural range 0 to 1023;
+
   -- registers
   signal addr_reg : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
   signal din_reg  : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
   signal dout_reg : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
   signal wren_reg : std_logic;
   signal word_reg : std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
-
-  -- counters
-  signal wait_counter    : natural range 0 to 31;
-  signal refresh_counter : natural range 0 to 1023;
 
   -- aliases to decode the address register
   alias col  : std_logic_vector(SDRAM_COL_WIDTH-1 downto 0) is addr_reg(SDRAM_COL_WIDTH-1 downto 0);

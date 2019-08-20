@@ -77,9 +77,6 @@ architecture arch of segment is
   -- control signals
   signal hit : std_logic;
 
-  -- registers
-  signal sdram_rden_reg : std_logic;
-
   -- debug
   attribute keep : boolean;
   attribute keep of hit : signal is true;
