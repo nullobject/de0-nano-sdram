@@ -30,18 +30,18 @@ use work.types.all;
 -- a read or write operation.
 entity sdram is
   port (
-    -- reset
-    reset : in std_logic;
-
     -- clock
     clk : in std_logic;
+
+    -- reset
+    reset : in std_logic;
 
     -- control signals
     ready : out std_logic;
 
     -- IO interface
     addr : in std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-    din : in std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
+    din  : in std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
     dout : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
     rden : in std_logic;
     wren : in std_logic;
