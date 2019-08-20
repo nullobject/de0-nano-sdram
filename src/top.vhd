@@ -218,10 +218,10 @@ begin
   sdram_wren <= '1' when state = WRITE else '0';
 
   -- set ROM signals
-  sprite_rom_addr <= std_logic_vector(to_unsigned(data_counter, sprite_rom_addr'length));
-  char_rom_addr   <= std_logic_vector(to_unsigned(data_counter, char_rom_addr'length));
-  fg_rom_addr     <= std_logic_vector(to_unsigned(data_counter, fg_rom_addr'length));
-  bg_rom_addr     <= std_logic_vector(to_unsigned(data_counter, bg_rom_addr'length));
+  sprite_rom_addr <= std_logic_vector(to_unsigned(data_counter/4, sprite_rom_addr'length));
+  char_rom_addr   <= std_logic_vector(to_unsigned(data_counter/4, char_rom_addr'length));
+  fg_rom_addr     <= std_logic_vector(to_unsigned(data_counter/4, fg_rom_addr'length));
+  bg_rom_addr     <= std_logic_vector(to_unsigned(data_counter/4, bg_rom_addr'length));
 
   -- set output data
   led <= sprite_rom_data;

@@ -34,9 +34,14 @@ use work.types.all;
 -- Otherwise, the page containing the address is requested from the SDRAM.
 entity segment is
   generic (
+    -- the cache size in bytes (must be a power of two)
+    CACHE_SIZE : natural := 4;
+
+    -- the width of the ROM address bus
     ROM_ADDR_WIDTH : natural;
-    SEGMENT_OFFSET : natural := 0;
-    CACHE_SIZE     : natural := 4 -- bytes
+
+    -- the offset of the segment in the SDRAM
+    SEGMENT_OFFSET : natural := 0
   );
   port (
     -- clock
@@ -74,30 +79,31 @@ architecture arch of segment is
 
   -- registers
   signal sdram_rden_reg : std_logic;
+
+  -- debug
+  attribute keep : boolean;
+  attribute keep of hit : signal is true;
 begin
   update_cache_data : process (clk)
   begin
     if rising_edge(clk) then
       if cs = '1' and hit = '0' and sdram_ready = '1' then
-        -- extract the bytes from the SDRAM data
+        -- cache the bytes from the SDRAM data
         for i in 0 to CACHE_SIZE-1 loop
           cache(i) <= sdram_data((i+1)*8-1 downto i*8);
         end loop;
 
-        -- TODO: calculate this
+        -- TODO: calculate the base address
         base_address <= rom_addr(ROM_ADDR_WIDTH-1 downto LOG_CACHE_SIZE) & "00";
       end if;
     end if;
   end process;
 
   -- assert the hit signal if the ROM address is in the cache
-  -- hit <= '1' when rom_addr(ROM_ADDR_WIDTH-1 downto LOG_CACHE_SIZE) = base_address(ROM_ADDR_WIDTH-1 downto LOG_CACHE_SIZE) else '0';
-  hit <= '0';
+  hit <= '1' when rom_addr(ROM_ADDR_WIDTH-1 downto LOG_CACHE_SIZE) = base_address(ROM_ADDR_WIDTH-1 downto LOG_CACHE_SIZE) else '0';
 
   -- set ROM data
-  --
-  -- TODO: extract the correct byte from the cache
-  rom_data <= cache(0);
+  rom_data <= cache(to_integer(unsigned(rom_addr(LOG_CACHE_SIZE-1 downto 0))));
 
   -- set SDRAM address
   sdram_addr <= std_logic_vector(resize(unsigned(rom_addr), sdram_addr'length)+SEGMENT_OFFSET) when cs = '1' else (others => '0');
