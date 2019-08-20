@@ -24,8 +24,8 @@ use ieee.numeric_std.all;
 
 use work.types.all;
 
--- A segment provides a read-only 8-bit interface to access a contiguous block
--- of memory located in SDRAM.
+-- A segment provides an 8-bit read-only interface to a contiguous block of
+-- memory located in SDRAM.
 --
 -- When vaild address is placed on the ROM address bus, the segment checks to
 -- see if the page containing the address has previously been cached. If so,
