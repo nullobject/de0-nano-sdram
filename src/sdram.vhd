@@ -114,6 +114,7 @@ architecture arch of sdram is
   signal din_reg  : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
   signal dout_reg : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
   signal wren_reg : std_logic;
+  signal word_reg : std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
 
   -- counters
   signal wait_counter    : natural range 0 to 31;
@@ -265,9 +266,9 @@ begin
     if rising_edge(clk) then
       if state = READ_WAIT then
         if wait_counter = CAS_LATENCY-1 then -- first word
-          dout_reg(15 downto 0) <= sdram_dq;
+          word_reg <= sdram_dq;
         elsif wait_counter = CAS_LATENCY-0 then -- last word
-          dout_reg(31 downto 16) <= sdram_dq;
+          dout_reg <= sdram_dq & word_reg;
         end if;
       end if;
     end if;
