@@ -79,11 +79,10 @@ begin
   begin
     if rising_edge(clk) then
       if cs = '1' and hit = '0' and sdram_ready = '1' then
-        -- TODO: iterate to fill cache
-        cache(0) <= sdram_data( 7 downto 0);
-        cache(1) <= sdram_data(15 downto 8);
-        cache(2) <= sdram_data(23 downto 16);
-        cache(3) <= sdram_data(31 downto 24);
+        -- extract the bytes from the SDRAM data
+        for i in 0 to CACHE_SIZE-1 loop
+          cache(i) <= sdram_data((i+1)*8-1 downto i*8);
+        end loop;
 
         -- TODO: calculate this
         base_address <= rom_addr(ROM_ADDR_WIDTH-1 downto LOG_CACHE_SIZE) & "00";
