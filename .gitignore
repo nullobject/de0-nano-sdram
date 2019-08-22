@@ -1,5 +1,6 @@
 *.qws
 c5_pin_model_dump.txt
 db
+greybox_tmp
 incremental_db
 output_files

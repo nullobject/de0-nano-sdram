@@ -47,6 +47,9 @@ entity segment is
     -- clock
     clk : in std_logic;
 
+    -- clock enable
+    cen : in std_logic := '1';
+
     -- chip select
     cs : in std_logic;
 
@@ -57,8 +60,8 @@ entity segment is
     -- SDRAM interface
     sdram_addr  : out std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
     sdram_data  : in std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-    sdram_rden  : out std_logic;
-    sdram_ready : in std_logic
+    sdram_rden  : out std_logic; -- requesting data
+    sdram_ready : in std_logic -- data is ready
   );
 end segment;
 
@@ -68,8 +71,8 @@ architecture arch of segment is
   -- the cache is just an array of bytes
   type cache_t is array (0 to CACHE_SIZE-1) of byte_t;
 
-  -- the base address of the cache
-  signal base_address : std_logic_vector(ROM_ADDR_WIDTH-1 downto 0);
+  -- the address of the first byte in the cache
+  signal cache_addr : std_logic_vector(ROM_ADDR_WIDTH-1 downto 0);
 
   -- the cached data
   signal cache : cache_t;
@@ -81,30 +84,34 @@ architecture arch of segment is
   attribute keep : boolean;
   attribute keep of hit : signal is true;
 begin
-  update_cache_data : process (clk)
+  -- latch the SDRAM data
+  latch_sdram_data : process (clk, cen)
   begin
-    if rising_edge(clk) then
-      if cs = '1' and hit = '0' and sdram_ready = '1' then
-        -- cache the bytes from the SDRAM data
+    if rising_edge(clk) and cen = '1' then
+      if hit = '1' then
+        -- set ROM data from the cache
+        rom_data <= cache(to_integer(unsigned(rom_addr)-unsigned(cache_addr)));
+      elsif cs = '1' and hit = '0' then
+        -- set ROM data
+        rom_data <= sdram_data(7 downto 0);
+
+        -- set the cache address
+        cache_addr <= rom_addr;
+
+        -- cache the SDRAM data
         for i in 0 to CACHE_SIZE-1 loop
           cache(i) <= sdram_data((i+1)*8-1 downto i*8);
         end loop;
-
-        -- TODO: calculate the base address
-        base_address <= rom_addr(ROM_ADDR_WIDTH-1 downto LOG_CACHE_SIZE) & "00";
       end if;
     end if;
   end process;
 
-  -- assert the hit signal if the ROM address is in the cache
-  hit <= '1' when rom_addr(ROM_ADDR_WIDTH-1 downto LOG_CACHE_SIZE) = base_address(ROM_ADDR_WIDTH-1 downto LOG_CACHE_SIZE) else '0';
-
-  -- set ROM data
-  rom_data <= cache(to_integer(unsigned(rom_addr(LOG_CACHE_SIZE-1 downto 0))));
+  -- assert the hit signal if the ROM address has been cached
+  hit <= '1' when rom_addr >= cache_addr and rom_addr <= std_logic_vector(unsigned(cache_addr)+CACHE_SIZE-1) else '0';
 
   -- set SDRAM address
   sdram_addr <= std_logic_vector(resize(unsigned(rom_addr), sdram_addr'length)+SEGMENT_OFFSET) when cs = '1' else (others => '0');
 
   -- assert the SDRAM read enable if we have a cache miss
-  sdram_rden <= cs and not hit;
+  sdram_rden <= not hit;
 end architecture arch;

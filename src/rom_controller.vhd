@@ -39,8 +39,8 @@ entity rom_controller is
     -- clock
     clk : in std_logic;
 
-    -- reset
-    reset : in std_logic;
+    -- clock enable
+    cen : in std_logic := '1';
 
     -- ROM interface
     sprite_rom_addr : in std_logic_vector(SPRITE_ROM_ADDR_WIDTH-1 downto 0);
@@ -62,14 +62,7 @@ end rom_controller;
 
 architecture arch of rom_controller is
   -- enums
-  type state_t is (READ, READ_WAIT);
-  type rom_t is (SPRITE_ROM, CHAR_ROM, FG_ROM, BG_ROM);
-
-  -- state signals
-  signal state, next_state : state_t;
-
-  -- control signals
-  signal read_done : std_logic;
+  type rom_t is (NONE, SPRITE_ROM, CHAR_ROM, FG_ROM, BG_ROM);
 
   -- ROM signals
   signal current_rom : rom_t;
@@ -95,6 +88,7 @@ begin
   )
   port map (
     clk => clk,
+    cen => cen,
 
     cs => sprite_rom_cs,
 
@@ -106,7 +100,7 @@ begin
     sdram_addr  => sprite_rom_sdram_addr,
     sdram_data  => sdram_data,
     sdram_rden  => sprite_rom_sdram_rden,
-    sdram_ready => read_done
+    sdram_ready => sdram_ready
   );
 
   char_rom_segment : entity work.segment
@@ -116,6 +110,7 @@ begin
   )
   port map (
     clk => clk,
+    cen => cen,
 
     cs => char_rom_cs,
 
@@ -127,7 +122,7 @@ begin
     sdram_addr  => char_rom_sdram_addr,
     sdram_data  => sdram_data,
     sdram_rden  => char_rom_sdram_rden,
-    sdram_ready => read_done
+    sdram_ready => sdram_ready
   );
 
   fg_rom_segment : entity work.segment
@@ -137,6 +132,7 @@ begin
   )
   port map (
     clk => clk,
+    cen => cen,
 
     cs => fg_rom_cs,
 
@@ -148,7 +144,7 @@ begin
     sdram_addr  => fg_rom_sdram_addr,
     sdram_data  => sdram_data,
     sdram_rden  => fg_rom_sdram_rden,
-    sdram_ready => read_done
+    sdram_ready => sdram_ready
   );
 
   bg_rom_segment : entity work.segment
@@ -158,6 +154,7 @@ begin
   )
   port map (
     clk => clk,
+    cen => cen,
 
     cs => bg_rom_cs,
 
@@ -169,53 +166,24 @@ begin
     sdram_addr  => bg_rom_sdram_addr,
     sdram_data  => sdram_data,
     sdram_rden  => bg_rom_sdram_rden,
-    sdram_ready => read_done
+    sdram_ready => sdram_ready
   );
 
-  -- state machine
-  fsm : process (state, sdram_ready)
+  -- set the current ROM
+  set_current_rom : process (sprite_rom_sdram_rden, char_rom_sdram_rden, fg_rom_sdram_rden, bg_rom_sdram_rden)
   begin
-    next_state <= state;
-
-    case state is
-      -- execute a read operation
-      when READ =>
-        if sdram_ready = '1' then
-          next_state <= READ_WAIT;
-        end if;
-
-      -- wait for the read to complete
-      when READ_WAIT =>
-        if sdram_ready = '1' then
-          next_state <= READ;
-        end if;
-    end case;
-  end process;
-
-  -- latch the next state
-  latch_next_state : process (clk, reset)
-  begin
-    if reset = '1' then
-      state <= READ;
-    elsif rising_edge(clk) then
-      state <= next_state;
-    end if;
-  end process;
-
-  -- update the current ROM
-  update_current_rom : process (clk, reset)
-  begin
-    if reset = '1' then
+    if sprite_rom_sdram_rden = '1' then
       current_rom <= SPRITE_ROM;
-    elsif rising_edge(clk) then
-      if read_done = '1' then
-        current_rom <= rom_t'succ(current_rom);
-      end if;
+    elsif char_rom_sdram_rden = '1' then
+      current_rom <= CHAR_ROM;
+    elsif fg_rom_sdram_rden = '1' then
+      current_rom <= FG_ROM;
+    elsif bg_rom_sdram_rden = '1' then
+      current_rom <= BG_ROM;
+    else
+      current_rom <= NONE;
     end if;
   end process;
-
-  -- the read is done when the SDRAM ready signal is asserted
-  read_done <= '1' when state = READ_WAIT and sdram_ready = '1' else '0';
 
   -- set the chip select signals
   sprite_rom_cs <= '1' when current_rom = SPRITE_ROM else '0';

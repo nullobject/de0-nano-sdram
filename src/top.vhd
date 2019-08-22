@@ -50,11 +50,11 @@ entity top is
 end top;
 
 architecture arch of top is
-  type state_t is (READ, READ_WAIT, WRITE, WRITE_WAIT);
+  type state_t is (WRITE, WRITE_WAIT, READ);
 
   -- clock signals
-  -- signal clk_5      : std_logic;
-  -- signal pll_locked : std_logic;
+  signal sys_clk, rom_clk : std_logic;
+  signal pll_locked : std_logic;
 
   signal reset : std_logic;
 
@@ -83,18 +83,25 @@ architecture arch of top is
   signal sdram_dout  : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
   signal sdram_rden  : std_logic;
   signal sdram_wren  : std_logic;
+
+  -- debug
+  attribute keep : boolean;
+  attribute keep of rom_clk : signal is true;
+  attribute keep of sys_clk : signal is true;
 begin
-  -- pll : entity work.pll
-  -- port map (
-  --   inclk0 => clk,
-  --   c0     => clk_5,
-  --   locked => pll_locked
-  -- );
+  pll : entity work.pll
+  port map (
+    -- areset => not key(0),
+    inclk0 => clk,
+    c0     => rom_clk,
+    c1     => sys_clk,
+    locked => pll_locked
+  );
 
   -- SDRAM controller
   sdram : entity work.sdram
   port map (
-    clk => clk,
+    clk => rom_clk,
 
     reset => reset,
 
@@ -125,9 +132,7 @@ begin
   -- ROM controller
   rom_controller : entity work.rom_controller
   port map (
-    clk => clk,
-
-    reset => reset,
+    clk => sys_clk,
 
     -- ROM interface
     sprite_rom_addr => sprite_rom_addr,
@@ -147,25 +152,11 @@ begin
   );
 
   -- state machine
-  fsm : process (state, sdram_ready, data_counter)
+  fsm : process (state, data_counter)
   begin
     next_state <= state;
 
     case state is
-      when READ =>
-        if sdram_ready = '1' then
-          next_state <= READ_WAIT;
-        end if;
-
-      when READ_WAIT =>
-        if sdram_ready = '1' then
-          if data_counter = 63 then
-            next_state <= WRITE;
-          else
-            next_state <= READ;
-          end if;
-        end if;
-
       when WRITE =>
         if sdram_ready = '1' then
           next_state <= WRITE_WAIT;
@@ -179,25 +170,27 @@ begin
             next_state <= WRITE;
           end if;
         end if;
+
+      when READ =>
     end case;
   end process;
 
   -- latch the next state
-  latch_next_state : process (clk, reset)
+  latch_next_state : process (rom_clk, reset)
   begin
     if reset = '1' then
-      state <= READ;
-    elsif rising_edge(clk) then
+      state <= WRITE;
+    elsif rising_edge(rom_clk) then
       state <= next_state;
     end if;
   end process;
 
-  update_data_counter : process (clk, reset)
+  update_data_counter : process (rom_clk, reset)
   begin
     if reset = '1' then
       data_counter <= 0;
-    elsif rising_edge(clk) then
-      if state = READ_WAIT and next_state /= READ_WAIT then -- leaving the READ_WAIT state
+    elsif rising_edge(rom_clk) then
+      if state = READ then
         if data_counter = 63 then
           data_counter <= 0;
         else
@@ -218,10 +211,10 @@ begin
   sdram_wren <= '1' when state = WRITE else '0';
 
   -- set ROM signals
-  sprite_rom_addr <= std_logic_vector(to_unsigned(data_counter/4, sprite_rom_addr'length));
-  char_rom_addr   <= std_logic_vector(to_unsigned(data_counter/4, char_rom_addr'length));
-  fg_rom_addr     <= std_logic_vector(to_unsigned(data_counter/4, fg_rom_addr'length));
-  bg_rom_addr     <= std_logic_vector(to_unsigned(data_counter/4, bg_rom_addr'length));
+  sprite_rom_addr <= std_logic_vector(to_unsigned(data_counter, sprite_rom_addr'length));
+  char_rom_addr   <= std_logic_vector(to_unsigned(data_counter, char_rom_addr'length));
+  fg_rom_addr     <= std_logic_vector(to_unsigned(data_counter, fg_rom_addr'length));
+  bg_rom_addr     <= std_logic_vector(to_unsigned(data_counter, bg_rom_addr'length));
 
   -- set output data
   led <= sprite_rom_data;
