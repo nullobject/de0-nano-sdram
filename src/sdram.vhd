@@ -61,16 +61,17 @@ entity sdram is
 end sdram;
 
 architecture arch of sdram is
+  subtype command_t is std_logic_vector(3 downto 0);
+
   -- commands
-  constant CMD_LOAD_MODE    : std_logic_vector(3 downto 0) := "0000";
-  constant CMD_AUTO_REFRESH : std_logic_vector(3 downto 0) := "0001";
-  constant CMD_PRECHARGE    : std_logic_vector(3 downto 0) := "0010";
-  constant CMD_ACTIVE       : std_logic_vector(3 downto 0) := "0011";
-  constant CMD_WRITE        : std_logic_vector(3 downto 0) := "0100";
-  constant CMD_READ         : std_logic_vector(3 downto 0) := "0101";
-  constant CMD_STOP         : std_logic_vector(3 downto 0) := "0110";
-  constant CMD_NOP          : std_logic_vector(3 downto 0) := "0111";
-  constant CMD_INHIBIT      : std_logic_vector(3 downto 0) := "1000";
+  constant CMD_LOAD_MODE    : command_t := "0000";
+  constant CMD_AUTO_REFRESH : command_t := "0001";
+  constant CMD_PRECHARGE    : command_t := "0010";
+  constant CMD_ACTIVE       : command_t := "0011";
+  constant CMD_WRITE        : command_t := "0100";
+  constant CMD_READ         : command_t := "0101";
+  constant CMD_STOP         : command_t := "0110";
+  constant CMD_NOP          : command_t := "0111";
 
   -- the number of words in a burst
   constant BURST_LENGTH : natural := 2;

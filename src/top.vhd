@@ -50,7 +50,7 @@ entity top is
 end top;
 
 architecture arch of top is
-  type state_t is (WRITE, WRITE_WAIT, READ);
+  type state_t is (INIT, WRITE, READ);
 
   -- clock signals
   signal sys_clk, rom_clk : std_logic;
@@ -157,18 +157,12 @@ begin
     next_state <= state;
 
     case state is
-      when WRITE =>
-        if sdram_ready = '1' then
-          next_state <= WRITE_WAIT;
-        end if;
+      when INIT =>
+        next_state <= WRITE;
 
-      when WRITE_WAIT =>
-        if sdram_ready = '1' then
-          if data_counter = 255 then
-            next_state <= READ;
-          else
-            next_state <= WRITE;
-          end if;
+      when WRITE =>
+        if data_counter = 255 then
+          next_state <= READ;
         end if;
 
       when READ =>
@@ -176,27 +170,21 @@ begin
   end process;
 
   -- latch the next state
-  latch_next_state : process (rom_clk, reset)
+  latch_next_state : process (sys_clk, reset)
   begin
     if reset = '1' then
-      state <= WRITE;
-    elsif rising_edge(rom_clk) then
+      state <= INIT;
+    elsif rising_edge(sys_clk) then
       state <= next_state;
     end if;
   end process;
 
-  update_data_counter : process (rom_clk, reset)
+  update_data_counter : process (sys_clk, reset)
   begin
     if reset = '1' then
       data_counter <= 0;
-    elsif rising_edge(rom_clk) then
-      if state = READ then
-        if data_counter = 63 then
-          data_counter <= 0;
-        else
-          data_counter <= data_counter + 1;
-        end if;
-      elsif state = WRITE_WAIT and next_state /= WRITE_WAIT then -- leaving the WRITE_WAIT state
+    elsif rising_edge(sys_clk) then
+      if state = READ or state = WRITE then
         data_counter <= data_counter + 1;
       end if;
     end if;
