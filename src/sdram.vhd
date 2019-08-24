@@ -61,17 +61,17 @@ entity sdram is
 end sdram;
 
 architecture arch of sdram is
-  subtype command_t is std_logic_vector(3 downto 0);
+  subtype command_t is std_logic_vector(2 downto 0);
 
   -- commands
-  constant CMD_LOAD_MODE    : command_t := "0000";
-  constant CMD_AUTO_REFRESH : command_t := "0001";
-  constant CMD_PRECHARGE    : command_t := "0010";
-  constant CMD_ACTIVE       : command_t := "0011";
-  constant CMD_WRITE        : command_t := "0100";
-  constant CMD_READ         : command_t := "0101";
-  constant CMD_STOP         : command_t := "0110";
-  constant CMD_NOP          : command_t := "0111";
+  constant CMD_LOAD_MODE    : command_t := "000";
+  constant CMD_AUTO_REFRESH : command_t := "001";
+  constant CMD_PRECHARGE    : command_t := "010";
+  constant CMD_ACTIVE       : command_t := "011";
+  constant CMD_WRITE        : command_t := "100";
+  constant CMD_READ         : command_t := "101";
+  constant CMD_STOP         : command_t := "110";
+  constant CMD_NOP          : command_t := "111";
 
   -- the number of words in a burst
   constant BURST_LENGTH : natural := 2;
@@ -108,7 +108,7 @@ architecture arch of sdram is
   signal state, next_state : state_t;
 
   -- command signals
-  signal cmd, next_cmd : std_logic_vector(3 downto 0) := CMD_NOP;
+  signal cmd, next_cmd : command_t := CMD_NOP;
 
   -- counters
   signal wait_counter    : natural range 0 to 31;
@@ -166,7 +166,7 @@ begin
 
       -- execute an auto refresh
       when REFRESH =>
-        if wait_counter = 8 then
+        if wait_counter = 6 then
           next_state <= IDLE;
         end if;
 
@@ -275,6 +275,9 @@ begin
     end if;
   end process;
 
+  -- assert SDRAM chip select
+  sdram_cs_n <= '0';
+
   -- set SDRAM clock signals
   sdram_clk <= clk;
 
@@ -306,7 +309,7 @@ begin
   sdram_dq <= din_reg when state = WRITE else (others => 'Z');
 
 	-- set SDRAM control signals
-  (sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n) <= cmd;
+  (sdram_ras_n, sdram_cas_n, sdram_we_n) <= cmd;
 
   -- the memory controller is ready if we're in the IDLE state
   ready <= '1' when state = IDLE else '0';
