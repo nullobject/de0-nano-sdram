@@ -165,7 +165,9 @@ begin
 
     case state is
       when INIT =>
-        next_state <= WRITE;
+        if data_counter = 255 then
+          next_state <= WRITE;
+        end if;
 
       when WRITE =>
         if data_counter = 255 then
@@ -194,9 +196,7 @@ begin
       data_counter <= 0;
     elsif rising_edge(sys_clk) then
       if cen_6 = '1' then
-        if state = READ or state = WRITE then
-          data_counter <= data_counter + 1;
-        end if;
+        data_counter <= data_counter + 1;
       end if;
     end if;
   end process;
