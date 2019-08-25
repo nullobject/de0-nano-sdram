@@ -114,9 +114,7 @@ architecture arch of sdram is
   -- registers
   signal addr_reg : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
   signal din_reg  : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
-  signal dout_reg : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
   signal wren_reg : std_logic;
-  signal word_reg : std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
 
   -- aliases to decode the address register
   alias col  : std_logic_vector(SDRAM_COL_WIDTH-1 downto 0) is addr_reg(SDRAM_COL_WIDTH-1 downto 0);
@@ -264,9 +262,9 @@ begin
     if rising_edge(clk) then
       if state = READ_WAIT then
         if wait_counter = CAS_LATENCY-1 then -- first word
-          word_reg <= sdram_dq;
-        elsif wait_counter = CAS_LATENCY-0 then -- last word
-          dout_reg <= sdram_dq & word_reg;
+          dout(15 downto 0) <= sdram_dq;
+        elsif wait_counter = CAS_LATENCY then -- last word
+          dout(31 downto 16) <= sdram_dq;
         end if;
       end if;
     end if;
@@ -306,8 +304,5 @@ begin
   (sdram_ras_n, sdram_cas_n, sdram_we_n) <= cmd;
 
   -- the memory controller is ready if we're in the IDLE state
-  ready <= '1' when state = IDLE else '0';
-
-  -- set output data
-  dout  <= dout_reg;
+  ready <= '1' when state = READ_WAIT and wait_counter = CAS_LATENCY else '0';
 end architecture arch;
