@@ -39,47 +39,42 @@ entity rom_controller is
     -- clock
     clk : in std_logic;
 
-    -- clock enable
-    cen : in std_logic := '1';
+    -- reset
+    reset : in std_logic;
 
     -- ROM interface
     sprite_rom_addr : in std_logic_vector(SPRITE_ROM_ADDR_WIDTH-1 downto 0);
-    sprite_rom_data : out byte_t;
+    sprite_rom_data : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
     char_rom_addr   : in std_logic_vector(CHAR_ROM_ADDR_WIDTH-1 downto 0);
-    char_rom_data   : out byte_t;
+    char_rom_data   : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
     fg_rom_addr     : in std_logic_vector(FG_ROM_ADDR_WIDTH-1 downto 0);
-    fg_rom_data     : out byte_t;
+    fg_rom_data     : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
     bg_rom_addr     : in std_logic_vector(BG_ROM_ADDR_WIDTH-1 downto 0);
-    bg_rom_data     : out byte_t;
+    bg_rom_data     : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
 
     -- SDRAM interface
     sdram_addr  : out std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
     sdram_data  : in std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-    sdram_rden  : out std_logic;
     sdram_ready : in std_logic
   );
 end rom_controller;
 
 architecture arch of rom_controller is
   -- enums
-  type rom_t is (NONE, SPRITE_ROM, CHAR_ROM, FG_ROM, BG_ROM);
+  type rom_t is (SPRITE_ROM, CHAR_ROM, FG_ROM, BG_ROM);
 
-  -- ROM signals
+  -- currently enabled ROM
   signal current_rom : rom_t;
 
   -- segment signals
   signal sprite_rom_cs         : std_logic;
   signal sprite_rom_sdram_addr : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-  signal sprite_rom_sdram_rden : std_logic;
   signal char_rom_cs           : std_logic;
   signal char_rom_sdram_addr   : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-  signal char_rom_sdram_rden   : std_logic;
   signal fg_rom_cs             : std_logic;
   signal fg_rom_sdram_addr     : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-  signal fg_rom_sdram_rden     : std_logic;
   signal bg_rom_cs             : std_logic;
   signal bg_rom_sdram_addr     : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-  signal bg_rom_sdram_rden     : std_logic;
 begin
   sprite_rom_segment : entity work.segment
   generic map (
@@ -88,7 +83,6 @@ begin
   )
   port map (
     clk => clk,
-    cen => cen,
 
     cs => sprite_rom_cs,
 
@@ -99,7 +93,6 @@ begin
     -- SDRAM interface
     sdram_addr  => sprite_rom_sdram_addr,
     sdram_data  => sdram_data,
-    sdram_rden  => sprite_rom_sdram_rden,
     sdram_ready => sdram_ready
   );
 
@@ -110,7 +103,6 @@ begin
   )
   port map (
     clk => clk,
-    cen => cen,
 
     cs => char_rom_cs,
 
@@ -121,7 +113,6 @@ begin
     -- SDRAM interface
     sdram_addr  => char_rom_sdram_addr,
     sdram_data  => sdram_data,
-    sdram_rden  => char_rom_sdram_rden,
     sdram_ready => sdram_ready
   );
 
@@ -132,7 +123,6 @@ begin
   )
   port map (
     clk => clk,
-    cen => cen,
 
     cs => fg_rom_cs,
 
@@ -143,7 +133,6 @@ begin
     -- SDRAM interface
     sdram_addr  => fg_rom_sdram_addr,
     sdram_data  => sdram_data,
-    sdram_rden  => fg_rom_sdram_rden,
     sdram_ready => sdram_ready
   );
 
@@ -154,7 +143,6 @@ begin
   )
   port map (
     clk => clk,
-    cen => cen,
 
     cs => bg_rom_cs,
 
@@ -165,23 +153,18 @@ begin
     -- SDRAM interface
     sdram_addr  => bg_rom_sdram_addr,
     sdram_data  => sdram_data,
-    sdram_rden  => bg_rom_sdram_rden,
     sdram_ready => sdram_ready
   );
 
-  -- set the current ROM
-  set_current_rom : process (sprite_rom_sdram_rden, char_rom_sdram_rden, fg_rom_sdram_rden, bg_rom_sdram_rden)
+  -- update the current ROM
+  update_current_rom : process (clk, reset)
   begin
-    if sprite_rom_sdram_rden = '1' then
+    if reset = '1' then
       current_rom <= SPRITE_ROM;
-    elsif char_rom_sdram_rden = '1' then
-      current_rom <= CHAR_ROM;
-    elsif fg_rom_sdram_rden = '1' then
-      current_rom <= FG_ROM;
-    elsif bg_rom_sdram_rden = '1' then
-      current_rom <= BG_ROM;
-    else
-      current_rom <= NONE;
+    elsif rising_edge(clk) then
+      if sdram_ready = '1' then
+        current_rom <= rom_t'succ(current_rom);
+      end if;
     end if;
   end process;
 
@@ -196,10 +179,4 @@ begin
                 char_rom_sdram_addr or
                 fg_rom_sdram_addr or
                 bg_rom_sdram_addr;
-
-  -- set SDRAM read enable
-  sdram_rden <= sprite_rom_sdram_rden or
-                char_rom_sdram_rden or
-                fg_rom_sdram_rden or
-                bg_rom_sdram_rden;
 end architecture arch;

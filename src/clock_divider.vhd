@@ -22,48 +22,33 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
-use work.types.all;
-
--- A segment provides a 32-bit read-only interface to a contiguous block of
--- memory located in SDRAM.
-entity segment is
+-- Generates a clock enable signal by dividing the input clock.
+entity clock_divider is
   generic (
-    -- the width of the ROM address bus
-    ROM_ADDR_WIDTH : natural;
-
-    -- the offset of the segment in the SDRAM
-    SEGMENT_OFFSET : natural := 0
+    DIVISOR : natural
   );
   port (
     -- clock
     clk : in std_logic;
 
-    -- chip select
-    cs : in std_logic;
-
-    -- ROM interface
-    rom_addr : in std_logic_vector(ROM_ADDR_WIDTH-1 downto 0);
-    rom_data : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-
-    -- SDRAM interface
-    sdram_addr  : out std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-    sdram_data  : in std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-    sdram_ready : in std_logic
+    -- clock enable output strobe
+    cen : out std_logic
   );
-end segment;
+end clock_divider;
 
-architecture arch of segment is
+architecture arch of clock_divider is
+  signal count : natural range 0 to DIVISOR-1;
 begin
-  -- latch ROM data from the SDRAM
-  latch_rom_data : process (clk)
+  process (clk)
   begin
     if rising_edge(clk) then
-      if sdram_ready = '1' and cs = '1' then
-        rom_data <= sdram_data;
+      if count < DIVISOR-1 then
+        count <= count + 1;
+        cen <= '0';
+      else
+        count <= 0;
+        cen <= '1';
       end if;
     end if;
   end process;
-
-  -- set SDRAM address
-  sdram_addr <= std_logic_vector(resize(unsigned(rom_addr), sdram_addr'length)+SEGMENT_OFFSET) when cs = '1' else (others => '0');
 end architecture arch;

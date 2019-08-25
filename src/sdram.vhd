@@ -36,15 +36,13 @@ entity sdram is
     -- reset
     reset : in std_logic;
 
-    -- control signals
+    -- controller interface
+    addr  : in std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
+    din   : in std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
+    dout  : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+    rden  : in std_logic;
+    wren  : in std_logic;
     ready : out std_logic;
-
-    -- IO interface
-    addr : in std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-    din  : in std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
-    dout : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-    rden : in std_logic;
-    wren : in std_logic;
 
     -- SDRAM interface
     sdram_clk   : out std_logic;
