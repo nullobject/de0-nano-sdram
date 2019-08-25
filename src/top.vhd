@@ -42,10 +42,10 @@ entity top is
     sdram_ba    : out std_logic_vector(SDRAM_BANK_WIDTH-1 downto 0);
     sdram_cas_n : out std_logic;
     sdram_cke   : out std_logic;
+    sdram_clk   : out std_logic;
     sdram_cs_n  : out std_logic;
     sdram_ras_n : out std_logic;
-    sdram_we_n  : out std_logic;
-    sdram_clk   : out std_logic
+    sdram_we_n  : out std_logic
   );
 end top;
 
@@ -94,8 +94,9 @@ begin
   pll : entity work.pll
   port map (
     inclk0 => clk,
-    c0     => rom_clk, -- 48MHz
-    c1     => sys_clk, -- 12Mhz
+    c0     => sdram_clk, -- 48MHz
+    c1     => rom_clk,   -- 48MHz
+    c2     => sys_clk,   -- 12Mhz
     locked => open
   );
 
@@ -122,7 +123,6 @@ begin
     wren => sdram_wren,
 
     -- SDRAM interface
-    sdram_clk   => sdram_clk,
     sdram_cke   => sdram_cke,
     sdram_cs_n  => sdram_cs_n,
     sdram_ras_n => sdram_ras_n,
@@ -177,22 +177,26 @@ begin
   end process;
 
   -- latch the next state
-  latch_next_state : process (sys_clk, cen_6, reset)
+  latch_next_state : process (sys_clk, reset)
   begin
     if reset = '1' then
       state <= INIT;
-    elsif rising_edge(sys_clk) and cen_6 = '1' then
-      state <= next_state;
+    elsif rising_edge(sys_clk) then
+      if cen_6 = '1' then
+        state <= next_state;
+      end if;
     end if;
   end process;
 
-  update_data_counter : process (sys_clk, cen_6, reset)
+  update_data_counter : process (sys_clk, reset)
   begin
     if reset = '1' then
       data_counter <= 0;
-    elsif rising_edge(sys_clk) and cen_6 = '1' then
-      if state = READ or state = WRITE then
-        data_counter <= data_counter + 1;
+    elsif rising_edge(sys_clk) then
+      if cen_6 = '1' then
+        if state = READ or state = WRITE then
+          data_counter <= data_counter + 1;
+        end if;
       end if;
     end if;
   end process;

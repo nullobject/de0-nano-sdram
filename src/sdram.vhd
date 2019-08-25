@@ -45,7 +45,6 @@ entity sdram is
     ready : out std_logic;
 
     -- SDRAM interface
-    sdram_clk   : out std_logic;
     sdram_cke   : out std_logic;
     sdram_cs_n  : out std_logic;
     sdram_ras_n : out std_logic;
@@ -275,9 +274,6 @@ begin
 
   -- assert SDRAM chip select
   sdram_cs_n <= '0';
-
-  -- set SDRAM clock signals
-  sdram_clk <= clk;
 
   -- deassert the clock enable at the beginning of the initialisation sequence
   sdram_cke <= '0' when state = INIT and wait_counter = 0 else '1';
