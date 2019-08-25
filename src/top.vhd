@@ -37,14 +37,14 @@ entity top is
 
     -- SDRAM interface
     sdram_a     : out std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
+    sdram_ba    : out std_logic_vector(SDRAM_BANK_WIDTH-1 downto 0);
     sdram_dq    : inout std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
     sdram_dqm   : out std_logic_vector(SDRAM_DATA_MASK_WIDTH-1 downto 0);
-    sdram_ba    : out std_logic_vector(SDRAM_BANK_WIDTH-1 downto 0);
-    sdram_cas_n : out std_logic;
     sdram_cke   : out std_logic;
     sdram_clk   : out std_logic;
     sdram_cs_n  : out std_logic;
     sdram_ras_n : out std_logic;
+    sdram_cas_n : out std_logic;
     sdram_we_n  : out std_logic
   );
 end top;
@@ -78,12 +78,13 @@ architecture arch of top is
   signal rom_controller_sdram_rden : std_logic;
 
   -- SDRAM signals
-  signal sdram_ready : std_logic;
   signal sdram_addr  : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
   signal sdram_din   : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0) := (others => '0');
   signal sdram_dout  : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
   signal sdram_rden  : std_logic;
   signal sdram_wren  : std_logic;
+  signal sdram_ready : std_logic;
+  signal sdram_valid : std_logic;
 
   -- debug
   attribute keep : boolean;
@@ -114,6 +115,7 @@ begin
 
     -- control signals
     ready => sdram_ready,
+    valid => sdram_valid,
 
     -- IO interface
     addr => sdram_addr,
@@ -155,7 +157,8 @@ begin
     -- SDRAM interface
     sdram_addr  => rom_controller_sdram_addr,
     sdram_data  => sdram_dout,
-    sdram_ready => sdram_ready
+    sdram_ready => sdram_ready,
+    sdram_valid => sdram_valid
   );
 
   -- state machine

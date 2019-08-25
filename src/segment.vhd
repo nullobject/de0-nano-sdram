@@ -48,7 +48,7 @@ entity segment is
     -- SDRAM interface
     sdram_addr  : out std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
     sdram_data  : in std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-    sdram_ready : in std_logic
+    sdram_valid : in std_logic
   );
 end segment;
 
@@ -58,7 +58,7 @@ begin
   latch_rom_data : process (clk)
   begin
     if rising_edge(clk) then
-      if sdram_ready = '1' and cs = '1' then
+      if sdram_valid = '1' and cs = '1' then
         rom_data <= sdram_data;
       end if;
     end if;

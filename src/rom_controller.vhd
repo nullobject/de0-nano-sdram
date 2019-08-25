@@ -55,7 +55,8 @@ entity rom_controller is
     -- SDRAM interface
     sdram_addr  : out std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
     sdram_data  : in std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-    sdram_ready : in std_logic
+    sdram_ready : in std_logic;
+    sdram_valid : in std_logic
   );
 end rom_controller;
 
@@ -93,7 +94,7 @@ begin
     -- SDRAM interface
     sdram_addr  => sprite_rom_sdram_addr,
     sdram_data  => sdram_data,
-    sdram_ready => sdram_ready
+    sdram_valid => sdram_valid
   );
 
   char_rom_segment : entity work.segment
@@ -113,7 +114,7 @@ begin
     -- SDRAM interface
     sdram_addr  => char_rom_sdram_addr,
     sdram_data  => sdram_data,
-    sdram_ready => sdram_ready
+    sdram_valid => sdram_valid
   );
 
   fg_rom_segment : entity work.segment
@@ -133,7 +134,7 @@ begin
     -- SDRAM interface
     sdram_addr  => fg_rom_sdram_addr,
     sdram_data  => sdram_data,
-    sdram_ready => sdram_ready
+    sdram_valid => sdram_valid
   );
 
   bg_rom_segment : entity work.segment
@@ -153,7 +154,7 @@ begin
     -- SDRAM interface
     sdram_addr  => bg_rom_sdram_addr,
     sdram_data  => sdram_data,
-    sdram_ready => sdram_ready
+    sdram_valid => sdram_valid
   );
 
   -- update the current ROM
@@ -162,7 +163,7 @@ begin
     if reset = '1' then
       current_rom <= SPRITE_ROM;
     elsif rising_edge(clk) then
-      if sdram_ready = '1' then
+      if sdram_valid = '1' then
         current_rom <= rom_t'succ(current_rom);
       end if;
     end if;

@@ -43,6 +43,7 @@ entity sdram is
     rden  : in std_logic;
     wren  : in std_logic;
     ready : out std_logic;
+    valid : out std_logic;
 
     -- SDRAM interface
     sdram_cke   : out std_logic;
@@ -304,5 +305,8 @@ begin
   (sdram_ras_n, sdram_cas_n, sdram_we_n) <= cmd;
 
   -- the memory controller is ready if we're in the IDLE state
-  ready <= '1' when state = READ_WAIT and wait_counter = CAS_LATENCY else '0';
+  ready <= '1' when state = IDLE else '0';
+
+  -- the output data is valid if the last word has been read
+  valid <= '1' when state = READ_WAIT and wait_counter = CAS_LATENCY else '0';
 end architecture arch;
