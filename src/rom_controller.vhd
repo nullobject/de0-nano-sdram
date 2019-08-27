@@ -42,7 +42,7 @@ entity rom_controller is
     -- reset
     reset : in std_logic;
 
-    -- ROM interface
+    -- read interface
     sprite_rom_addr : in std_logic_vector(SPRITE_ROM_ADDR_WIDTH-1 downto 0);
     sprite_rom_data : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
     char_rom_addr   : in std_logic_vector(CHAR_ROM_ADDR_WIDTH-1 downto 0);
@@ -52,11 +52,17 @@ entity rom_controller is
     bg_rom_addr     : in std_logic_vector(BG_ROM_ADDR_WIDTH-1 downto 0);
     bg_rom_data     : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
 
+    -- write interface
+    ioctl_addr : in std_logic_vector(21 downto 0);
+    ioctl_data : in std_logic_vector(15 downto 0);
+    ioctl_we   : in std_logic;
+
     -- SDRAM interface
     sdram_addr  : out std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-    sdram_data  : in std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-    sdram_ready : in std_logic;
-    sdram_valid : in std_logic
+    sdram_din   : out std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
+    sdram_dout  : in std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+    sdram_valid : in std_logic;
+    sdram_ready : in std_logic
   );
 end rom_controller;
 
@@ -93,7 +99,7 @@ begin
 
     -- SDRAM interface
     sdram_addr  => sprite_rom_sdram_addr,
-    sdram_data  => sdram_data,
+    sdram_data  => sdram_dout,
     sdram_valid => sdram_valid
   );
 
@@ -113,7 +119,7 @@ begin
 
     -- SDRAM interface
     sdram_addr  => char_rom_sdram_addr,
-    sdram_data  => sdram_data,
+    sdram_data  => sdram_dout,
     sdram_valid => sdram_valid
   );
 
@@ -133,7 +139,7 @@ begin
 
     -- SDRAM interface
     sdram_addr  => fg_rom_sdram_addr,
-    sdram_data  => sdram_data,
+    sdram_data  => sdram_dout,
     sdram_valid => sdram_valid
   );
 
@@ -153,7 +159,7 @@ begin
 
     -- SDRAM interface
     sdram_addr  => bg_rom_sdram_addr,
-    sdram_data  => sdram_data,
+    sdram_data  => sdram_dout,
     sdram_valid => sdram_valid
   );
 
@@ -170,13 +176,17 @@ begin
   end process;
 
   -- set the chip select signals
-  sprite_rom_cs <= '1' when current_rom = SPRITE_ROM else '0';
-  char_rom_cs   <= '1' when current_rom = CHAR_ROM   else '0';
-  fg_rom_cs     <= '1' when current_rom = FG_ROM     else '0';
-  bg_rom_cs     <= '1' when current_rom = BG_ROM     else '0';
+  sprite_rom_cs <= '1' when current_rom = SPRITE_ROM and ioctl_we = '0' else '0';
+  char_rom_cs   <= '1' when current_rom = CHAR_ROM   and ioctl_we = '0' else '0';
+  fg_rom_cs     <= '1' when current_rom = FG_ROM     and ioctl_we = '0' else '0';
+  bg_rom_cs     <= '1' when current_rom = BG_ROM     and ioctl_we = '0' else '0';
+
+  -- set the SDRAM input data
+  sdram_din <= ioctl_data;
 
   -- set SDRAM address
-  sdram_addr <= sprite_rom_sdram_addr or
+  sdram_addr <= ioctl_addr or
+                sprite_rom_sdram_addr or
                 char_rom_sdram_addr or
                 fg_rom_sdram_addr or
                 bg_rom_sdram_addr;

@@ -39,13 +39,14 @@ entity top is
     sdram_a     : out std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
     sdram_ba    : out std_logic_vector(SDRAM_BANK_WIDTH-1 downto 0);
     sdram_dq    : inout std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
-    sdram_dqm   : out std_logic_vector(SDRAM_DATA_MASK_WIDTH-1 downto 0);
-    sdram_cke   : out std_logic;
     sdram_clk   : out std_logic;
+    sdram_cke   : out std_logic;
     sdram_cs_n  : out std_logic;
     sdram_ras_n : out std_logic;
     sdram_cas_n : out std_logic;
-    sdram_we_n  : out std_logic
+    sdram_we_n  : out std_logic;
+    sdram_dqml  : out std_logic;
+    sdram_dqmh  : out std_logic
   );
 end top;
 
@@ -65,26 +66,29 @@ architecture arch of top is
   -- counters
   signal data_counter : natural range 0 to 255;
 
+  -- IOCTL signals
+  signal ioctl_addr : std_logic_vector(21 downto 0);
+  signal ioctl_data : std_logic_vector(15 downto 0);
+  signal ioctl_we   : std_logic;
+
   -- ROM signals
-  signal sprite_rom_addr           : std_logic_vector(SPRITE_ROM_ADDR_WIDTH-1 downto 0);
-  signal sprite_rom_data           : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-  signal char_rom_addr             : std_logic_vector(CHAR_ROM_ADDR_WIDTH-1 downto 0);
-  signal char_rom_data             : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-  signal fg_rom_addr               : std_logic_vector(FG_ROM_ADDR_WIDTH-1 downto 0);
-  signal fg_rom_data               : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-  signal bg_rom_addr               : std_logic_vector(BG_ROM_ADDR_WIDTH-1 downto 0);
-  signal bg_rom_data               : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-  signal rom_controller_sdram_addr : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-  signal rom_controller_sdram_rden : std_logic;
+  signal sprite_rom_addr : std_logic_vector(SPRITE_ROM_ADDR_WIDTH-1 downto 0);
+  signal sprite_rom_data : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+  signal char_rom_addr   : std_logic_vector(CHAR_ROM_ADDR_WIDTH-1 downto 0);
+  signal char_rom_data   : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+  signal fg_rom_addr     : std_logic_vector(FG_ROM_ADDR_WIDTH-1 downto 0);
+  signal fg_rom_data     : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+  signal bg_rom_addr     : std_logic_vector(BG_ROM_ADDR_WIDTH-1 downto 0);
+  signal bg_rom_data     : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
 
   -- SDRAM signals
   signal sdram_addr  : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-  signal sdram_din   : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0) := (others => '0');
+  signal sdram_din   : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
   signal sdram_dout  : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+  signal sdram_valid : std_logic;
+  signal sdram_ready : std_logic;
   signal sdram_rden  : std_logic;
   signal sdram_wren  : std_logic;
-  signal sdram_ready : std_logic;
-  signal sdram_valid : std_logic;
 
   -- debug
   attribute keep : boolean;
@@ -108,34 +112,33 @@ begin
 
   -- SDRAM controller
   sdram : entity work.sdram
+  generic map (CLK_FREQ => 48.0)
   port map (
     clk => rom_clk,
 
     reset => reset,
 
-    -- control signals
+    -- IO interface
+    addr  => sdram_addr,
+    din   => sdram_din,
+    dout  => sdram_dout,
     ready => sdram_ready,
     valid => sdram_valid,
-
-    -- IO interface
-    addr => sdram_addr,
-    din  => sdram_din,
-    dout => sdram_dout,
-    rden => sdram_rden,
-    wren => sdram_wren,
+    rden  => sdram_rden,
+    wren  => sdram_wren,
 
     -- SDRAM interface
+    sdram_a     => sdram_a,
+    sdram_ba    => sdram_ba,
+    sdram_dq    => sdram_dq,
     sdram_cke   => sdram_cke,
     sdram_cs_n  => sdram_cs_n,
     sdram_ras_n => sdram_ras_n,
     sdram_cas_n => sdram_cas_n,
     sdram_we_n  => sdram_we_n,
-    sdram_ba    => sdram_ba,
-    sdram_a     => sdram_a,
-    sdram_dqm   => sdram_dqm,
-    sdram_dq    => sdram_dq
+    sdram_dqml  => sdram_dqml,
+    sdram_dqmh  => sdram_dqmh
   );
-
 
   -- ROM controller
   rom_controller : entity work.rom_controller
@@ -144,7 +147,7 @@ begin
 
     reset => reset,
 
-    -- ROM interface
+    -- read interface
     sprite_rom_addr => sprite_rom_addr,
     sprite_rom_data => sprite_rom_data,
     char_rom_addr   => char_rom_addr,
@@ -154,11 +157,17 @@ begin
     bg_rom_addr     => bg_rom_addr,
     bg_rom_data     => bg_rom_data,
 
+    -- write interface
+    ioctl_addr => ioctl_addr,
+    ioctl_data => ioctl_data,
+    ioctl_we   => ioctl_we,
+
     -- SDRAM interface
-    sdram_addr  => rom_controller_sdram_addr,
-    sdram_data  => sdram_dout,
-    sdram_ready => sdram_ready,
-    sdram_valid => sdram_valid
+    sdram_addr  => sdram_addr,
+    sdram_din   => sdram_din,
+    sdram_dout  => sdram_dout,
+    sdram_valid => sdram_valid,
+    sdram_ready => sdram_ready
   );
 
   -- state machine
@@ -206,10 +215,12 @@ begin
 
   reset <= not key(0);
 
-  sdram_addr <= std_logic_vector(to_unsigned(data_counter, sdram_addr'length)) when state = WRITE else rom_controller_sdram_addr;
-  sdram_din  <= std_logic_vector(to_unsigned(data_counter, sdram_din'length));
-  sdram_rden <= '1' when state = READ else '0';
-  sdram_wren <= '1' when state = WRITE else '0';
+  ioctl_addr <= std_logic_vector(to_unsigned(data_counter, ioctl_addr'length)) when ioctl_we = '1' else (others => '0');
+  ioctl_data <= std_logic_vector(to_unsigned(data_counter, ioctl_data'length));
+  ioctl_we   <= '1' when state = WRITE else '0';
+
+  sdram_rden <= not ioctl_we;
+  sdram_wren <= ioctl_we;
 
   -- set ROM signals
   sprite_rom_addr <= std_logic_vector(to_unsigned(data_counter/4, sprite_rom_addr'length));

@@ -21,6 +21,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use ieee.math_real.all;
 
 use work.types.all;
 
@@ -29,6 +30,9 @@ use work.types.all;
 -- The ready signal is asserted when the memory controller is ready to execute
 -- a read or write operation.
 entity sdram is
+  generic (
+    CLK_FREQ : real := 100.0 -- MHz
+  );
   port (
     -- clock
     clk : in std_logic;
@@ -40,21 +44,22 @@ entity sdram is
     addr  : in std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
     din   : in std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
     dout  : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+    valid : out std_logic;
+    ready : out std_logic;
     rden  : in std_logic;
     wren  : in std_logic;
-    ready : out std_logic;
-    valid : out std_logic;
 
     -- SDRAM interface
+    sdram_a     : out std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
+    sdram_ba    : out std_logic_vector(SDRAM_BANK_WIDTH-1 downto 0);
+    sdram_dq    : inout std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
     sdram_cke   : out std_logic;
     sdram_cs_n  : out std_logic;
     sdram_ras_n : out std_logic;
     sdram_cas_n : out std_logic;
     sdram_we_n  : out std_logic;
-    sdram_ba    : out std_logic_vector(SDRAM_BANK_WIDTH-1 downto 0);
-    sdram_a     : out std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
-    sdram_dqm   : out std_logic_vector(SDRAM_DATA_MASK_WIDTH-1 downto 0);
-    sdram_dq    : inout std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0)
+    sdram_dqml  : out std_logic;
+    sdram_dqmh  : out std_logic
   );
 end sdram;
 
@@ -71,6 +76,12 @@ architecture arch of sdram is
   constant CMD_STOP         : command_t := "110";
   constant CMD_NOP          : command_t := "111";
 
+  -- timing values taken directly from the datasheet
+  constant T_MRD : real := 14.0; -- ns
+  constant T_RC  : real := 63.0; -- ns
+  constant T_RCD : real := 21.0; -- ns
+  constant T_RP  : real := 21.0; -- ns
+
   -- the number of words in a burst
   constant BURST_LENGTH : natural := 2;
 
@@ -85,7 +96,7 @@ architecture arch of sdram is
   constant WRITE_BURST_MODE : std_logic := '1'; -- 0=burst, 1=single
 
   -- the value written to the mode register to configure the memory
-  constant MODE : std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0) := (
+  constant MODE_REG : std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0) := (
     "000" &
     WRITE_BURST_MODE &
     "00" &
@@ -94,19 +105,44 @@ architecture arch of sdram is
     std_logic_vector(to_unsigned(ilog2(BURST_LENGTH), 3))
   );
 
-  -- The minimum number of clock ticks between each auto refresh command. The
-  -- datasheet specifies that the auto refresh command needs to be executed
-  -- 8192 times every 64ms. This value has been calculated for a 100MHz clock
-  -- frequency.
-  constant TICKS_PER_REFRESH : natural := 781;
+  -- calculate the clock period in nanoseconds
+  constant CLK_PERIOD : real := 1.0/CLK_FREQ*1000.0;
 
-  type state_t is (INIT, LOAD_MODE, IDLE, ACTIVE, READ, READ_WAIT, WRITE, REFRESH);
+  -- the number of clock cycles to wait while a LOAD_MODE command is being
+  -- executed
+  constant LOAD_MODE_WAIT : natural := natural(ceil(T_MRD/CLK_PERIOD));
+
+  -- the number of clock cycles to wait while an ACTIVE command is being
+  -- executed
+  constant ACTIVE_WAIT : natural := natural(ceil(T_RCD/CLK_PERIOD));
+
+  -- the number of clock cycles to wait while an AUTO REFRESH command is being
+  -- executed
+  constant AUTO_REFRESH_WAIT : natural := natural(ceil(T_RC/CLK_PERIOD));
+
+  -- the number of clock cycles to wait while PRECHARGE command is being
+  -- executed
+  constant PRECHARGE_WAIT : natural := natural(ceil(T_RP/CLK_PERIOD));
+
+  -- the maximum number of clock cycles between each AUTO REFRESH command,
+  -- which needs to be executed 8192 times every 64ms
+  constant REFRESH_MAX : natural := 375;
+
+  type state_t is (INIT, MODE, IDLE, ACTIVE, READ, READ_WAIT, WRITE, REFRESH);
 
   -- state signals
   signal state, next_state : state_t;
 
   -- command signals
   signal cmd, next_cmd : command_t := CMD_NOP;
+
+  -- control signals
+  signal load_mode_done : std_logic;
+  signal active_done    : std_logic;
+  signal refresh_done   : std_logic;
+  signal read_done      : std_logic;
+  signal first_word     : std_logic;
+  signal should_refresh : std_logic;
 
   -- counters
   signal wait_counter    : natural range 0 to 31;
@@ -115,6 +151,7 @@ architecture arch of sdram is
   -- registers
   signal addr_reg : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
   signal din_reg  : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
+  signal dout_reg : std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
   signal wren_reg : std_logic;
 
   -- aliases to decode the address register
@@ -123,7 +160,7 @@ architecture arch of sdram is
   alias bank : std_logic_vector(SDRAM_BANK_WIDTH-1 downto 0) is addr_reg(SDRAM_COL_WIDTH+SDRAM_ROW_WIDTH+SDRAM_BANK_WIDTH-1 downto SDRAM_COL_WIDTH+SDRAM_ROW_WIDTH);
 begin
   -- state machine
-  fsm : process (state, cmd, wait_counter, refresh_counter, rden, wren, wren_reg)
+  fsm : process (state, wait_counter, rden, wren, wren_reg, load_mode_done, active_done, refresh_done, read_done, should_refresh)
   begin
     next_state <= state;
 
@@ -135,24 +172,24 @@ begin
       when INIT =>
         if wait_counter = 0 then
           next_cmd <= CMD_PRECHARGE;
-        elsif wait_counter = 2 then
+        elsif wait_counter = PRECHARGE_WAIT-1 then
           next_cmd <= CMD_AUTO_REFRESH;
-        elsif wait_counter = 11 then
+        elsif wait_counter = PRECHARGE_WAIT+AUTO_REFRESH_WAIT-1 then
           next_cmd <= CMD_AUTO_REFRESH;
-        elsif wait_counter = 20 then
-          next_state <= LOAD_MODE;
+        elsif wait_counter = PRECHARGE_WAIT+AUTO_REFRESH_WAIT+AUTO_REFRESH_WAIT-1 then
+          next_state <= MODE;
           next_cmd   <= CMD_LOAD_MODE;
         end if;
 
       -- load the mode register
-      when LOAD_MODE =>
-        if wait_counter = 1 then
+      when MODE =>
+        if load_mode_done = '1' then
           next_state <= IDLE;
         end if;
 
       -- wait for a read/write request
       when IDLE =>
-        if refresh_counter >= TICKS_PER_REFRESH-1 then
+        if should_refresh = '1' then
           next_state <= REFRESH;
           next_cmd   <= CMD_AUTO_REFRESH;
         elsif rden = '1' or wren = '1' then
@@ -162,13 +199,13 @@ begin
 
       -- execute an auto refresh
       when REFRESH =>
-        if wait_counter = 6 then
+        if refresh_done = '1' then
           next_state <= IDLE;
         end if;
 
       -- activate the row
       when ACTIVE =>
-        if wait_counter = 1 then
+        if active_done = '1' then
           if wren_reg = '1' then
             next_state <= WRITE;
             next_cmd   <= CMD_WRITE;
@@ -184,7 +221,7 @@ begin
 
       -- wait for the read to complete
       when READ_WAIT =>
-        if wait_counter = CAS_LATENCY then
+        if read_done = '1' then
           next_state <= IDLE;
         end if;
 
@@ -208,7 +245,7 @@ begin
 
   -- Update the wait counter.
   --
-  -- The wait counter is used to hold the state for a number of clock ticks.
+  -- The wait counter is used to hold the state for a number of clock cycles.
   update_wait_counter : process (clk, reset)
   begin
     if reset = '1' then
@@ -254,28 +291,41 @@ begin
     end if;
   end process;
 
-  -- Latch the output data.
+  -- Latch the SDRAM data.
   --
-  -- We need to latch the words from the SDRAM into the output register, as
-  -- data is bursted.
-  latch_read_data : process (clk)
+  -- We need to latch the data read from the SDRAM into a register, as it is
+  -- bursted.
+  latch_sdram_data : process (clk)
   begin
     if rising_edge(clk) then
-      if state = READ_WAIT then
-        if wait_counter = CAS_LATENCY-1 then -- first word
-          dout(15 downto 0) <= sdram_dq;
-        elsif wait_counter = CAS_LATENCY then -- last word
-          dout(31 downto 16) <= sdram_dq;
-        end if;
+      if state = READ_WAIT and first_word = '1' then
+        dout_reg <= sdram_dq;
       end if;
     end if;
   end process;
 
-  -- assert SDRAM chip select
-  sdram_cs_n <= '0';
+  -- set control signals
+  load_mode_done <= '1' when wait_counter = LOAD_MODE_WAIT-1    else '0';
+  active_done    <= '1' when wait_counter = ACTIVE_WAIT-1       else '0';
+  refresh_done   <= '1' when wait_counter = AUTO_REFRESH_WAIT-1 else '0';
+  read_done      <= '1' when wait_counter = CAS_LATENCY-0       else '0';
+  first_word     <= '1' when wait_counter = CAS_LATENCY-1       else '0';
+  should_refresh <= '1' when refresh_counter >= REFRESH_MAX-1   else '0';
+
+  -- the output data is valid when the read is done
+  valid <= '1' when state = READ_WAIT and read_done = '1' else '0';
+
+  -- the memory controller is ready if we're in the IDLE state
+  ready <= '1' when state = IDLE else '0';
+
+  -- set output data
+  dout <= sdram_dq & dout_reg;
 
   -- deassert the clock enable at the beginning of the initialisation sequence
   sdram_cke <= '0' when state = INIT and wait_counter = 0 else '1';
+
+	-- set SDRAM control signals
+  (sdram_cs_n, sdram_ras_n, sdram_cas_n, sdram_we_n) <= '0' & cmd;
 
   -- set SDRAM bank
   with state select
@@ -289,24 +339,16 @@ begin
   with state select
     sdram_a <=
       "0010000000000" when INIT,
-      MODE            when LOAD_MODE,
+      MODE_REG        when MODE,
       row             when ACTIVE,
-      "0010" & col    when READ,  -- auto precharge
-      "0010" & col    when WRITE, -- auto precharge
+      "0010" & col    when READ,   -- auto precharge
+      "0010" & col    when WRITE,  -- auto precharge
       (others => '0') when others;
-
-  -- set SDRAM data mask
-  sdram_dqm <= (others => '0');
 
   -- set SDRAM input data if we're writing, otherwise put it into a high impedance state
   sdram_dq <= din_reg when state = WRITE else (others => 'Z');
 
-	-- set SDRAM control signals
-  (sdram_ras_n, sdram_cas_n, sdram_we_n) <= cmd;
-
-  -- the memory controller is ready if we're in the IDLE state
-  ready <= '1' when state = IDLE else '0';
-
-  -- the output data is valid if the last word has been read
-  valid <= '1' when state = READ_WAIT and wait_counter = CAS_LATENCY else '0';
+  -- set SDRAM data mask
+  sdram_dqmh <= '0';
+  sdram_dqml <= '0';
 end architecture arch;
