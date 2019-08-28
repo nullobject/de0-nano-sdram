@@ -319,7 +319,7 @@ begin
   ready <= '1' when state = IDLE else '0';
 
   -- set output data
-  dout <= sdram_dq & dout_reg;
+  dout <= dout_reg & sdram_dq;
 
   -- deassert the clock enable at the beginning of the initialisation sequence
   sdram_cke <= '0' when state = INIT and wait_counter = 0 else '1';
