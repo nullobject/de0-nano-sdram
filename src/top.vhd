@@ -36,8 +36,8 @@ entity top is
     led : out std_logic_vector(7 downto 0);
 
     -- SDRAM interface
-    sdram_a     : out std_logic_vector(SDRAM_ADDR_WIDTH-1 downto 0);
-    sdram_ba    : out std_logic_vector(SDRAM_BANK_WIDTH-1 downto 0);
+    sdram_a     : out unsigned(SDRAM_ADDR_WIDTH-1 downto 0);
+    sdram_ba    : out unsigned(SDRAM_BANK_WIDTH-1 downto 0);
     sdram_dq    : inout std_logic_vector(SDRAM_DATA_WIDTH-1 downto 0);
     sdram_clk   : out std_logic;
     sdram_cke   : out std_logic;
@@ -67,22 +67,22 @@ architecture arch of top is
   signal data_counter : natural range 0 to 255;
 
   -- IOCTL signals
-  signal ioctl_addr : std_logic_vector(21 downto 0);
+  signal ioctl_addr : unsigned(21 downto 0);
   signal ioctl_data : std_logic_vector(15 downto 0);
   signal ioctl_we   : std_logic;
 
   -- ROM signals
-  signal sprite_rom_addr : std_logic_vector(SPRITE_ROM_ADDR_WIDTH-1 downto 0);
+  signal sprite_rom_addr : unsigned(SPRITE_ROM_ADDR_WIDTH-1 downto 0);
   signal sprite_rom_data : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-  signal char_rom_addr   : std_logic_vector(CHAR_ROM_ADDR_WIDTH-1 downto 0);
+  signal char_rom_addr   : unsigned(CHAR_ROM_ADDR_WIDTH-1 downto 0);
   signal char_rom_data   : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-  signal fg_rom_addr     : std_logic_vector(FG_ROM_ADDR_WIDTH-1 downto 0);
+  signal fg_rom_addr     : unsigned(FG_ROM_ADDR_WIDTH-1 downto 0);
   signal fg_rom_data     : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-  signal bg_rom_addr     : std_logic_vector(BG_ROM_ADDR_WIDTH-1 downto 0);
+  signal bg_rom_addr     : unsigned(BG_ROM_ADDR_WIDTH-1 downto 0);
   signal bg_rom_data     : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
 
   -- SDRAM signals
-  signal sdram_addr  : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
+  signal sdram_addr  : unsigned(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
   signal sdram_din   : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
   signal sdram_dout  : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
   signal sdram_we    : std_logic;
@@ -214,15 +214,15 @@ begin
 
   reset <= not key(0);
 
-  ioctl_addr <= std_logic_vector(to_unsigned(data_counter, ioctl_addr'length));
+  ioctl_addr <= to_unsigned(data_counter, ioctl_addr'length);
   ioctl_data <= std_logic_vector(to_unsigned(data_counter, ioctl_data'length));
   ioctl_we   <= '1' when state = WRITE else '0';
 
   -- set ROM signals
-  sprite_rom_addr <= std_logic_vector(to_unsigned(data_counter/4, sprite_rom_addr'length));
-  char_rom_addr   <= std_logic_vector(to_unsigned(data_counter/4, char_rom_addr'length));
-  fg_rom_addr     <= std_logic_vector(to_unsigned(data_counter/4, fg_rom_addr'length));
-  bg_rom_addr     <= std_logic_vector(to_unsigned(data_counter/4, bg_rom_addr'length));
+  sprite_rom_addr <= to_unsigned(data_counter/4, sprite_rom_addr'length);
+  char_rom_addr   <= to_unsigned(data_counter/4, char_rom_addr'length);
+  fg_rom_addr     <= to_unsigned(data_counter/4, fg_rom_addr'length);
+  bg_rom_addr     <= to_unsigned(data_counter/4, bg_rom_addr'length);
 
   -- set output data
   led <= sprite_rom_data(7 downto 0);
