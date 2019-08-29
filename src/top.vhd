@@ -85,10 +85,9 @@ architecture arch of top is
   signal sdram_addr  : std_logic_vector(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
   signal sdram_din   : std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
   signal sdram_dout  : std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+  signal sdram_we    : std_logic;
   signal sdram_valid : std_logic;
   signal sdram_ready : std_logic;
-  signal sdram_rden  : std_logic;
-  signal sdram_wren  : std_logic;
 
   -- debug
   attribute keep : boolean;
@@ -124,8 +123,7 @@ begin
     dout  => sdram_dout,
     ready => sdram_ready,
     valid => sdram_valid,
-    rden  => sdram_rden,
-    wren  => sdram_wren,
+    we    => sdram_we,
 
     -- SDRAM interface
     sdram_a     => sdram_a,
@@ -166,6 +164,7 @@ begin
     sdram_addr  => sdram_addr,
     sdram_din   => sdram_din,
     sdram_dout  => sdram_dout,
+    sdram_we    => sdram_we,
     sdram_valid => sdram_valid,
     sdram_ready => sdram_ready
   );
@@ -215,12 +214,9 @@ begin
 
   reset <= not key(0);
 
-  ioctl_addr <= std_logic_vector(to_unsigned(data_counter, ioctl_addr'length)) when ioctl_we = '1' else (others => '0');
+  ioctl_addr <= std_logic_vector(to_unsigned(data_counter, ioctl_addr'length));
   ioctl_data <= std_logic_vector(to_unsigned(data_counter, ioctl_data'length));
   ioctl_we   <= '1' when state = WRITE else '0';
-
-  sdram_rden <= not ioctl_we;
-  sdram_wren <= ioctl_we;
 
   -- set ROM signals
   sprite_rom_addr <= std_logic_vector(to_unsigned(data_counter/4, sprite_rom_addr'length));
