@@ -51,6 +51,8 @@ entity top is
 end top;
 
 architecture arch of top is
+  constant TILE_ROM_SIZE : natural := 4096;
+
   type state_t is (INIT, WRITE, READ);
 
   -- clock signals
@@ -63,7 +65,7 @@ architecture arch of top is
   signal state, next_state : state_t;
 
   -- counters
-  signal data_counter : natural range 0 to 255;
+  signal data_counter : natural range 0 to TILE_ROM_SIZE-1;
 
   -- IOCTL signals
   signal ioctl_addr : unsigned(21 downto 0);
@@ -173,12 +175,12 @@ begin
 
     case state is
       when INIT =>
-        if data_counter = 255 then
+        if data_counter = TILE_ROM_SIZE-1 then
           next_state <= WRITE;
         end if;
 
       when WRITE =>
-        if data_counter = 255 then
+        if data_counter = TILE_ROM_SIZE-1 then
           next_state <= READ;
         end if;
 
