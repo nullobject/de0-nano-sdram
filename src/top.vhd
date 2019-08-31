@@ -54,9 +54,8 @@ architecture arch of top is
   type state_t is (INIT, WRITE, READ);
 
   -- clock signals
-  signal sys_clk : std_logic;
   signal rom_clk : std_logic;
-  signal cen_6   : std_logic;
+  signal cen_4   : std_logic;
 
   signal reset : std_logic;
 
@@ -92,22 +91,20 @@ architecture arch of top is
   -- debug
   attribute keep : boolean;
   attribute keep of rom_clk : signal is true;
-  attribute keep of sys_clk : signal is true;
-  attribute keep of cen_6   : signal is true;
+  attribute keep of cen_4   : signal is true;
 begin
   pll : entity work.pll
   port map (
     inclk0 => clk,
-    c0     => sdram_clk, -- 48MHz
-    c1     => rom_clk,   -- 48MHz
-    c2     => sys_clk,   -- 12Mhz
+    c0     => rom_clk,   -- 48MHz
+    c1     => sdram_clk, -- 48MHz
     locked => open
   );
 
-  -- generate a 6MHz clock enable signal
-  clock_divider_6 : entity work.clock_divider
-  generic map (DIVISOR => 2)
-  port map (clk => sys_clk, cen => cen_6);
+  -- generate a 4MHz clock enable signal
+  clock_divider_4 : entity work.clock_divider
+  generic map (DIVISOR => 12)
+  port map (clk => rom_clk, cen => cen_4);
 
   -- SDRAM controller
   sdram : entity work.sdram
@@ -190,23 +187,23 @@ begin
   end process;
 
   -- latch the next state
-  latch_next_state : process (sys_clk, reset)
+  latch_next_state : process (rom_clk, reset)
   begin
     if reset = '1' then
       state <= INIT;
-    elsif rising_edge(sys_clk) then
-      if cen_6 = '1' then
+    elsif rising_edge(rom_clk) then
+      if cen_4 = '1' then
         state <= next_state;
       end if;
     end if;
   end process;
 
-  update_data_counter : process (sys_clk, reset)
+  update_data_counter : process (rom_clk, reset)
   begin
     if reset = '1' then
       data_counter <= 0;
-    elsif rising_edge(sys_clk) then
-      if cen_6 = '1' then
+    elsif rising_edge(rom_clk) then
+      if cen_4 = '1' then
         data_counter <= data_counter + 1;
       end if;
     end if;
