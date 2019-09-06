@@ -24,15 +24,18 @@ use ieee.numeric_std.all;
 
 use work.types.all;
 
--- A segment provides a 32-bit read-only interface to a contiguous block of
--- memory located in SDRAM.
+-- A segment provides a read-only interface to a contiguous block of ROM data,
+-- located at some offset in the SDRAM.
 entity segment is
   generic (
     -- the width of the ROM address bus
     ROM_ADDR_WIDTH : natural;
 
-    -- the offset of the segment in the SDRAM
-    SEGMENT_OFFSET : natural := 0
+    -- the width of the ROM data bus
+    ROM_DATA_WIDTH : natural;
+
+    -- the offset of the ROM data in the SDRAM
+    ROM_OFFSET : natural := 0
   );
   port (
     -- clock
@@ -43,27 +46,69 @@ entity segment is
 
     -- ROM interface
     rom_addr : in unsigned(ROM_ADDR_WIDTH-1 downto 0);
-    rom_data : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+    rom_data : out std_logic_vector(ROM_DATA_WIDTH-1 downto 0);
 
     -- SDRAM interface
-    sdram_addr  : out unsigned(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-    sdram_data  : in std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+    sdram_addr  : buffer unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
+    sdram_data  : in std_logic_vector(SDRAM_CTRL_DATA_WIDTH-1 downto 0);
+    sdram_req   : out std_logic;
     sdram_valid : in std_logic
   );
 end segment;
 
 architecture arch of segment is
+  -- the number of ROM words in a SDRAM word
+  constant ROM_WORDS : natural := SDRAM_CTRL_DATA_WIDTH / ROM_DATA_WIDTH;
+
+  -- the number of LSBs that need to be maked in the ROM address
+  constant MASK_WIDTH : natural := ilog2(ROM_WORDS);
+
+  -- cache signals
+  signal cache_addr   : unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
+  signal cache_data   : std_logic_vector(SDRAM_CTRL_DATA_WIDTH-1 downto 0);
+  signal cache_hit    : std_logic;
+  signal cache_offset : natural range 0 to 3;
+
+  -- masks the n LSBs of the given value
+  function mask_lsb(
+    a : unsigned;
+    n : natural
+  ) return unsigned is
+  begin
+    return shift_left(a(a'length-1 downto n), n);
+  end mask_lsb;
 begin
-  -- latch ROM data from the SDRAM
-  latch_rom_data : process (clk)
+  -- latch cache data from the SDRAM
+  latch_cache_data : process (clk)
   begin
     if rising_edge(clk) then
       if sdram_valid = '1' and cs = '1' then
-        rom_data <= sdram_data;
+        cache_addr <= sdram_addr;
+        cache_data <= sdram_data;
       end if;
     end if;
   end process;
 
-  -- set SDRAM address
-  sdram_addr <= resize(rom_addr, sdram_addr'length)+SEGMENT_OFFSET when cs = '1' else (others => '0');
+  -- Set the ROM data.
+  --
+  -- We need to extract the word at the rquested offset in the cache.
+  rom_data <= cache_data((ROM_WORDS-cache_offset)*ROM_DATA_WIDTH-1 downto (ROM_WORDS-cache_offset-1)*ROM_DATA_WIDTH);
+
+  -- we have a cache hit if the request address is already in the cache
+  cache_hit <= '1' when sdram_addr = cache_addr else '0';
+
+  -- calculate the cache offset
+  cache_offset <= to_integer(rom_addr(MASK_WIDTH-1 downto 0)) when MASK_WIDTH > 0 else 0;
+
+  -- request data if we have a cache miss
+  sdram_req <= not (cache_hit or cs);
+
+  -- Set SDRAM address.
+  --
+  -- We need to mask the LSBs of the address, because we're converting from
+  -- a ROM address to a 32-bit SDRAM address.
+  --
+  -- For example, converting an 8-bit address to a 32-bit address requires
+  -- masking the two LSBs.
+  sdram_addr <= resize(mask_lsb(rom_addr, MASK_WIDTH), sdram_addr'length) + ROM_OFFSET;
 end architecture arch;

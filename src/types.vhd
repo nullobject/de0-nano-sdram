@@ -26,24 +26,27 @@ use ieee.math_real.all;
 package types is
   -- IOCTL
   constant IOCTL_ADDR_WIDTH : natural := 22;
-  constant IOCTL_DATA_WIDTH : natural := 16;
+  constant IOCTL_DATA_WIDTH : natural := 8;
 
-  -- SDRAM interface
-  constant SDRAM_BANK_WIDTH : natural := 2;
-  constant SDRAM_ADDR_WIDTH : natural := 13;
-  constant SDRAM_DATA_WIDTH : natural := 16;
-  constant SDRAM_COL_WIDTH  : natural := 9;
-  constant SDRAM_ROW_WIDTH  : natural := 13;
+  -- SDRAM
+  constant SDRAM_ADDR_WIDTH      : natural := 13;
+  constant SDRAM_DATA_WIDTH      : natural := 16;
+  constant SDRAM_BANK_WIDTH      : natural := 2;
+  constant SDRAM_COL_WIDTH       : natural := 9;
+  constant SDRAM_ROW_WIDTH       : natural := 13;
+  constant SDRAM_CTRL_ADDR_WIDTH : natural := 23; -- 8Mx32-bit
+  constant SDRAM_CTRL_DATA_WIDTH : natural := 32;
 
-  -- controller interface
-  constant SDRAM_INPUT_ADDR_WIDTH  : natural := 25; -- 32MB
-  constant SDRAM_INPUT_DATA_WIDTH  : natural := 16;
-  constant SDRAM_OUTPUT_DATA_WIDTH : natural := 32;
-
-  constant CHAR_ROM_ADDR_WIDTH   : natural := 6; -- 32kB
-  constant FG_ROM_ADDR_WIDTH     : natural := 6; -- 128kB
-  constant BG_ROM_ADDR_WIDTH     : natural := 6; -- 128kB
-  constant SPRITE_ROM_ADDR_WIDTH : natural := 6; -- 128kB
+  constant MAIN_ROM_ADDR_WIDTH   : natural := 8;
+  constant MAIN_ROM_DATA_WIDTH   : natural := 8;
+  constant SPRITE_ROM_ADDR_WIDTH : natural := 6;
+  constant SPRITE_ROM_DATA_WIDTH : natural := 32;
+  constant CHAR_ROM_ADDR_WIDTH   : natural := 6;
+  constant CHAR_ROM_DATA_WIDTH   : natural := 32;
+  constant FG_ROM_ADDR_WIDTH     : natural := 6;
+  constant FG_ROM_DATA_WIDTH     : natural := 32;
+  constant BG_ROM_ADDR_WIDTH     : natural := 6;
+  constant BG_ROM_DATA_WIDTH     : natural := 32;
 
   subtype byte_t is std_logic_vector(7 downto 0);
 

@@ -24,180 +24,245 @@ use ieee.numeric_std.all;
 
 use work.types.all;
 
--- The ROM controller provides an interface to the GPU for accessing tile data.
+-- The ROM controller handles reading and writing ROM data to the SDRAM. It
+-- provides a read-only interface to the GPU for reading tile data. It also
+-- provides a write-only interface for storing the ROM data received through
+-- the MiSTer IOCTL interface.
 --
--- The original arcade hardware has multiple ROM chips that store the tile data
--- for the different graphics layers. Unfortunately, the Cyclone V chip doesn't
--- have enough memory blocks for us to implement these ROMs. Instead, we need
--- to store the tile data in the SDRAM.
+-- The original arcade hardware has multiple ROM chips that store things like
+-- the program data, tile data, sound data, etc. Unfortunately, the Cyclone
+-- V FPGA doesn't have enough memory blocks for us to implement all these ROMs.
+-- Instead, we need to store the them in the SDRAM.
 --
--- The tile ROMs are accessed concurrently by the GPU, so the job of the ROM
--- controller is to manage reading the tile data from the SDRAM in a fair, and
--- timely manner.
+-- The ROMs are all accessed concurrently, so the ROM controller is responsible
+-- for reading the ROM data from the SDRAM in a fair and timely manner.
 entity rom_controller is
+  generic (
+    MAIN_ROM_OFFSET   : natural;
+    SPRITE_ROM_OFFSET : natural;
+    CHAR_ROM_OFFSET   : natural;
+    FG_ROM_OFFSET     : natural;
+    BG_ROM_OFFSET     : natural
+  );
   port (
-    -- clock
-    clk : in std_logic;
-
     -- reset
     reset : in std_logic;
 
-    -- read interface
-    sprite_rom_addr : in unsigned(SPRITE_ROM_ADDR_WIDTH-1 downto 0);
-    sprite_rom_data : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-    char_rom_addr   : in unsigned(CHAR_ROM_ADDR_WIDTH-1 downto 0);
-    char_rom_data   : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-    fg_rom_addr     : in unsigned(FG_ROM_ADDR_WIDTH-1 downto 0);
-    fg_rom_data     : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
-    bg_rom_addr     : in unsigned(BG_ROM_ADDR_WIDTH-1 downto 0);
-    bg_rom_data     : out std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+    -- clock
+    clk : in std_logic;
 
-    -- write interface
-    ioctl_addr : in unsigned(IOCTL_ADDR_WIDTH-1 downto 0);
-    ioctl_data : in std_logic_vector(IOCTL_DATA_WIDTH-1 downto 0);
-    ioctl_we   : in std_logic;
+    -- ROM interface
+    main_rom_addr   : in unsigned(MAIN_ROM_ADDR_WIDTH-1 downto 0);
+    main_rom_data   : out std_logic_vector(MAIN_ROM_DATA_WIDTH-1 downto 0);
+    sprite_rom_addr : in unsigned(SPRITE_ROM_ADDR_WIDTH-1 downto 0);
+    sprite_rom_data : out std_logic_vector(SPRITE_ROM_DATA_WIDTH-1 downto 0);
+    char_rom_addr   : in unsigned(CHAR_ROM_ADDR_WIDTH-1 downto 0);
+    char_rom_data   : out std_logic_vector(CHAR_ROM_DATA_WIDTH-1 downto 0);
+    fg_rom_addr     : in unsigned(FG_ROM_ADDR_WIDTH-1 downto 0);
+    fg_rom_data     : out std_logic_vector(FG_ROM_DATA_WIDTH-1 downto 0);
+    bg_rom_addr     : in unsigned(BG_ROM_ADDR_WIDTH-1 downto 0);
+    bg_rom_data     : out std_logic_vector(BG_ROM_DATA_WIDTH-1 downto 0);
 
     -- SDRAM interface
-    sdram_addr  : out unsigned(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-    sdram_din   : out std_logic_vector(SDRAM_INPUT_DATA_WIDTH-1 downto 0);
-    sdram_dout  : in std_logic_vector(SDRAM_OUTPUT_DATA_WIDTH-1 downto 0);
+    sdram_addr  : out unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
+    sdram_din   : out std_logic_vector(SDRAM_CTRL_DATA_WIDTH-1 downto 0);
+    sdram_dout  : in std_logic_vector(SDRAM_CTRL_DATA_WIDTH-1 downto 0);
     sdram_we    : out std_logic;
+    sdram_req   : out std_logic;
+    sdram_ack   : in std_logic;
     sdram_valid : in std_logic;
-    sdram_ready : in std_logic
+    sdram_ready : in std_logic;
+
+    -- IOCTL interface
+    ioctl_addr     : in unsigned(IOCTL_ADDR_WIDTH-1 downto 0);
+    ioctl_data     : in byte_t;
+    ioctl_wr       : in std_logic;
+    ioctl_download : in std_logic
   );
 end rom_controller;
 
 architecture arch of rom_controller is
-  -- enums
-  type rom_t is (SPRITE_ROM, CHAR_ROM, FG_ROM, BG_ROM);
+  -- control signals
+  signal pending_read : std_logic;
+  signal valid        : std_logic;
 
-  -- currently enabled ROM
-  signal current_rom : rom_t;
+  -- request signals
+  signal main_rom_req   : std_logic;
+  signal sprite_rom_req : std_logic;
+  signal char_rom_req   : std_logic;
+  signal fg_rom_req     : std_logic;
+  signal bg_rom_req     : std_logic;
 
   -- chip select signals
+  signal main_rom_cs   : std_logic;
   signal sprite_rom_cs : std_logic;
   signal char_rom_cs   : std_logic;
   signal fg_rom_cs     : std_logic;
   signal bg_rom_cs     : std_logic;
 
   -- address mux signals
-  signal ioctl_sdram_addr      : unsigned(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-  signal sprite_rom_sdram_addr : unsigned(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-  signal char_rom_sdram_addr   : unsigned(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-  signal fg_rom_sdram_addr     : unsigned(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
-  signal bg_rom_sdram_addr     : unsigned(SDRAM_INPUT_ADDR_WIDTH-1 downto 0);
+  signal ioctl_sdram_addr      : unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
+  signal main_rom_sdram_addr   : unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
+  signal sprite_rom_sdram_addr : unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
+  signal char_rom_sdram_addr   : unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
+  signal fg_rom_sdram_addr     : unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
+  signal bg_rom_sdram_addr     : unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
 begin
-  sprite_rom_segment : entity work.segment
+  main_rom : entity work.segment
+  generic map (
+    ROM_ADDR_WIDTH => MAIN_ROM_ADDR_WIDTH,
+    ROM_DATA_WIDTH => MAIN_ROM_DATA_WIDTH,
+    ROM_OFFSET     => MAIN_ROM_OFFSET
+  )
+  port map (
+    clk         => clk,
+    cs          => main_rom_cs,
+    rom_addr    => main_rom_addr,
+    rom_data    => main_rom_data,
+    sdram_addr  => main_rom_sdram_addr,
+    sdram_data  => sdram_dout,
+    sdram_req   => main_rom_req,
+    sdram_valid => sdram_valid
+  );
+
+  sprite_rom : entity work.segment
   generic map (
     ROM_ADDR_WIDTH => SPRITE_ROM_ADDR_WIDTH,
-    SEGMENT_OFFSET => 16#00#
+    ROM_DATA_WIDTH => SPRITE_ROM_DATA_WIDTH,
+    ROM_OFFSET     => SPRITE_ROM_OFFSET
   )
   port map (
-    clk => clk,
-
-    cs => sprite_rom_cs,
-
-    -- ROM interface
-    rom_addr => sprite_rom_addr,
-    rom_data => sprite_rom_data,
-
-    -- SDRAM interface
+    clk         => clk,
+    cs          => sprite_rom_cs,
+    rom_addr    => sprite_rom_addr,
+    rom_data    => sprite_rom_data,
     sdram_addr  => sprite_rom_sdram_addr,
     sdram_data  => sdram_dout,
+    sdram_req   => sprite_rom_req,
     sdram_valid => sdram_valid
   );
 
-  char_rom_segment : entity work.segment
+  char_rom : entity work.segment
   generic map (
     ROM_ADDR_WIDTH => CHAR_ROM_ADDR_WIDTH,
-    SEGMENT_OFFSET => 16#10#
+    ROM_DATA_WIDTH => CHAR_ROM_DATA_WIDTH,
+    ROM_OFFSET     => CHAR_ROM_OFFSET
   )
   port map (
-    clk => clk,
-
-    cs => char_rom_cs,
-
-    -- ROM interface
-    rom_addr => char_rom_addr,
-    rom_data => char_rom_data,
-
-    -- SDRAM interface
+    clk         => clk,
+    cs          => char_rom_cs,
+    rom_addr    => char_rom_addr,
+    rom_data    => char_rom_data,
     sdram_addr  => char_rom_sdram_addr,
     sdram_data  => sdram_dout,
+    sdram_req   => char_rom_req,
     sdram_valid => sdram_valid
   );
 
-  fg_rom_segment : entity work.segment
+  fg_rom : entity work.segment
   generic map (
     ROM_ADDR_WIDTH => FG_ROM_ADDR_WIDTH,
-    SEGMENT_OFFSET => 16#20#
+    ROM_DATA_WIDTH => FG_ROM_DATA_WIDTH,
+    ROM_OFFSET     => FG_ROM_OFFSET
   )
   port map (
-    clk => clk,
-
-    cs => fg_rom_cs,
-
-    -- ROM interface
-    rom_addr => fg_rom_addr,
-    rom_data => fg_rom_data,
-
-    -- SDRAM interface
+    clk         => clk,
+    cs          => fg_rom_cs,
+    rom_addr    => fg_rom_addr,
+    rom_data    => fg_rom_data,
     sdram_addr  => fg_rom_sdram_addr,
     sdram_data  => sdram_dout,
+    sdram_req   => fg_rom_req,
     sdram_valid => sdram_valid
   );
 
-  bg_rom_segment : entity work.segment
+  bg_rom : entity work.segment
   generic map (
     ROM_ADDR_WIDTH => BG_ROM_ADDR_WIDTH,
-    SEGMENT_OFFSET => 16#30#
+    ROM_DATA_WIDTH => BG_ROM_DATA_WIDTH,
+    ROM_OFFSET     => BG_ROM_OFFSET
   )
   port map (
-    clk => clk,
-
-    cs => bg_rom_cs,
-
-    -- ROM interface
-    rom_addr => bg_rom_addr,
-    rom_data => bg_rom_data,
-
-    -- SDRAM interface
+    clk         => clk,
+    cs          => bg_rom_cs,
+    rom_addr    => bg_rom_addr,
+    rom_data    => bg_rom_data,
     sdram_addr  => bg_rom_sdram_addr,
     sdram_data  => sdram_dout,
+    sdram_req   => bg_rom_req,
     sdram_valid => sdram_valid
+  );
+
+  -- Convert bytes received from IOCTL interface into 32-bit words.
+  --
+  -- The SDRAM controller has a 32-bit interface, so we need to buffer bytes
+  -- received from the IOCTL interface in order to write 32-bit words to the
+  -- SDRAM.
+  download_buffer : entity work.download_buffer
+  generic map (SIZE => 4)
+  port map (
+    reset => reset,
+    clk   => clk,
+    din   => ioctl_data,
+    dout  => sdram_din,
+    we    => ioctl_download and ioctl_wr,
+    valid => valid
   );
 
   -- update the current ROM
   update_current_rom : process (clk, reset)
   begin
     if reset = '1' then
-      current_rom <= SPRITE_ROM;
+      main_rom_cs   <= '0';
+      sprite_rom_cs <= '0';
+      char_rom_cs   <= '0';
+      fg_rom_cs     <= '0';
+      bg_rom_cs     <= '0';
     elsif rising_edge(clk) then
-      if sdram_valid = '1' then
-        current_rom <= rom_t'succ(current_rom);
+      if pending_read = '0' or sdram_valid = '1' then
+        main_rom_cs   <= '0';
+        sprite_rom_cs <= '0';
+        char_rom_cs   <= '0';
+        fg_rom_cs     <= '0';
+        bg_rom_cs     <= '0';
+
+        if main_rom_req = '1' then
+          main_rom_cs <= '1';
+        elsif sprite_rom_req = '1' then
+          sprite_rom_cs <= '1';
+        elsif char_rom_req = '1' then
+          char_rom_cs <= '1';
+        elsif fg_rom_req = '1' then
+          fg_rom_cs <= '1';
+        elsif bg_rom_req = '1' then
+          bg_rom_cs <= '1';
+        end if;
       end if;
     end if;
   end process;
 
-  -- set the chip select signals
-  sprite_rom_cs <= '1' when current_rom = SPRITE_ROM and ioctl_we = '0' else '0';
-  char_rom_cs   <= '1' when current_rom = CHAR_ROM   and ioctl_we = '0' else '0';
-  fg_rom_cs     <= '1' when current_rom = FG_ROM     and ioctl_we = '0' else '0';
-  bg_rom_cs     <= '1' when current_rom = BG_ROM     and ioctl_we = '0' else '0';
+  -- we have a pending read operation if any of the ROMs are currently selected
+  pending_read <= main_rom_cs or
+                  sprite_rom_cs or
+                  char_rom_cs or
+                  fg_rom_cs or
+                  bg_rom_cs;
 
-  -- set the IOCTL address if we're writing, otherwise set it to zero
-  ioctl_sdram_addr <= resize(ioctl_addr, ioctl_sdram_addr'length) when ioctl_we = '1' else (others => '0');
+  -- we need to divide the address by four, because we're converting from
+  -- a 8-bit IOCTL address to a 32-bit SDRAM address
+  ioctl_sdram_addr <= resize(shift_right(ioctl_addr, 2), ioctl_sdram_addr'length);
 
   -- mux the SDRAM address
-  sdram_addr <= ioctl_sdram_addr or
-                sprite_rom_sdram_addr or
-                char_rom_sdram_addr or
-                fg_rom_sdram_addr or
-                bg_rom_sdram_addr;
+  sdram_addr <= ioctl_sdram_addr      when ioctl_download = '1' else
+                main_rom_sdram_addr   when main_rom_cs = '1'    else
+                sprite_rom_sdram_addr when sprite_rom_cs = '1'  else
+                char_rom_sdram_addr   when char_rom_cs = '1'    else
+                fg_rom_sdram_addr     when fg_rom_cs = '1'      else
+                bg_rom_sdram_addr     when bg_rom_cs = '1'      else
+                (others => '0');
 
-  -- set the SDRAM input data
-  sdram_din <= ioctl_data;
+  sdram_req <= (ioctl_download and valid) or (not ioctl_download and pending_read);
 
-  -- enable writing to the SDRAM if data is being written to the IOCTL
-  sdram_we <= ioctl_we;
+  -- set SDRAM write enable
+  sdram_we <= ioctl_download;
 end architecture arch;
