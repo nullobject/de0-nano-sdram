@@ -115,6 +115,7 @@ set_global_assignment -name DEVICE EP4CE22F17C6
 set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
 
 set_global_assignment -name VHDL_FILE src/clock_divider.vhd
+set_global_assignment -name VHDL_FILE src/download_buffer.vhd
 set_global_assignment -name VHDL_FILE src/rom_controller.vhd
 set_global_assignment -name VHDL_FILE src/sdram.vhd
 set_global_assignment -name VHDL_FILE src/segment.vhd
