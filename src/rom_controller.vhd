@@ -116,13 +116,12 @@ begin
   )
   port map (
     clk         => clk,
-    cs          => main_rom_cs,
     rom_addr    => main_rom_addr,
     rom_data    => main_rom_data,
     sdram_addr  => main_rom_sdram_addr,
     sdram_data  => sdram_dout,
     sdram_req   => main_rom_req,
-    sdram_valid => sdram_valid
+    sdram_valid => main_rom_cs and sdram_valid
   );
 
   sprite_rom : entity work.segment
@@ -133,13 +132,12 @@ begin
   )
   port map (
     clk         => clk,
-    cs          => sprite_rom_cs,
     rom_addr    => sprite_rom_addr,
     rom_data    => sprite_rom_data,
     sdram_addr  => sprite_rom_sdram_addr,
     sdram_data  => sdram_dout,
     sdram_req   => sprite_rom_req,
-    sdram_valid => sdram_valid
+    sdram_valid => sprite_rom_cs and sdram_valid
   );
 
   char_rom : entity work.segment
@@ -150,13 +148,12 @@ begin
   )
   port map (
     clk         => clk,
-    cs          => char_rom_cs,
     rom_addr    => char_rom_addr,
     rom_data    => char_rom_data,
     sdram_addr  => char_rom_sdram_addr,
     sdram_data  => sdram_dout,
     sdram_req   => char_rom_req,
-    sdram_valid => sdram_valid
+    sdram_valid => char_rom_cs and sdram_valid
   );
 
   fg_rom : entity work.segment
@@ -167,13 +164,12 @@ begin
   )
   port map (
     clk         => clk,
-    cs          => fg_rom_cs,
     rom_addr    => fg_rom_addr,
     rom_data    => fg_rom_data,
     sdram_addr  => fg_rom_sdram_addr,
     sdram_data  => sdram_dout,
     sdram_req   => fg_rom_req,
-    sdram_valid => sdram_valid
+    sdram_valid => fg_rom_cs and sdram_valid
   );
 
   bg_rom : entity work.segment
@@ -184,20 +180,17 @@ begin
   )
   port map (
     clk         => clk,
-    cs          => bg_rom_cs,
     rom_addr    => bg_rom_addr,
     rom_data    => bg_rom_data,
     sdram_addr  => bg_rom_sdram_addr,
     sdram_data  => sdram_dout,
     sdram_req   => bg_rom_req,
-    sdram_valid => sdram_valid
+    sdram_valid => bg_rom_cs and sdram_valid
   );
 
-  -- Convert bytes received from IOCTL interface into 32-bit words.
-  --
-  -- The SDRAM controller has a 32-bit interface, so we need to buffer bytes
-  -- received from the IOCTL interface in order to write 32-bit words to the
-  -- SDRAM.
+  -- The SDRAM controller has a 32-bit interface, so we need to buffer the
+  -- bytes received from the IOCTL interface in order to write 32-bit words to
+  -- the SDRAM.
   download_buffer : entity work.download_buffer
   generic map (SIZE => 4)
   port map (
@@ -241,7 +234,7 @@ begin
     end if;
   end process;
 
-  -- we have a pending read operation if any of the ROMs are currently selected
+  -- there is a pending read operation when any of the ROMs are selected
   pending_read <= main_rom_cs or
                   sprite_rom_cs or
                   char_rom_cs or

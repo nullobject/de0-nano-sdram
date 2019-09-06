@@ -292,10 +292,7 @@ begin
     end if;
   end process;
 
-  -- Latch the SDRAM data.
-  --
-  -- We need to latch the output data into a register, as it's bursted from the
-  -- SDRAM.
+  -- latch the output data into a register, as it's bursted from the SDRAM
   latch_sdram_data : process (clk)
   begin
     if rising_edge(clk) then
@@ -350,9 +347,7 @@ begin
       "0010" & col    when WRITE,  -- auto precharge
       (others => '0') when others;
 
-  -- Write the data to the SDRAM data bus if we're writing, otherwise set it to high impedance.
-  --
-  -- We need to decode the next 16-bit word from the write buffer.
+  -- decode the next 16-bit word from the write buffer
   sdram_dq <= din_reg((BURST_LENGTH-wait_counter)*SDRAM_DATA_WIDTH-1 downto (BURST_LENGTH-wait_counter-1)*SDRAM_DATA_WIDTH) when state = WRITE else (others => 'Z');
 
   -- set SDRAM data mask

@@ -69,7 +69,7 @@ architecture arch of top is
 
   -- IOCTL signals
   signal ioctl_addr     : unsigned(IOCTL_ADDR_WIDTH-1 downto 0);
-  signal ioctl_data     : std_logic_vector(IOCTL_DATA_WIDTH-1 downto 0);
+  signal ioctl_data     : byte_t;
   signal ioctl_wr       : std_logic;
   signal ioctl_download : std_logic;
 

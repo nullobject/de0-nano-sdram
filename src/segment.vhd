@@ -41,9 +41,6 @@ entity segment is
     -- clock
     clk : in std_logic;
 
-    -- chip select
-    cs : in std_logic;
-
     -- ROM interface
     rom_addr : in unsigned(ROM_ADDR_WIDTH-1 downto 0);
     rom_data : out std_logic_vector(ROM_DATA_WIDTH-1 downto 0);
@@ -64,51 +61,34 @@ architecture arch of segment is
   constant MASK_WIDTH : natural := ilog2(ROM_WORDS);
 
   -- cache signals
-  signal cache_addr   : unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
-  signal cache_data   : std_logic_vector(SDRAM_CTRL_DATA_WIDTH-1 downto 0);
-  signal cache_hit    : std_logic;
-  signal cache_offset : natural range 0 to 3;
-
-  -- masks the n LSBs of the given value
-  function mask_lsb(
-    a : unsigned;
-    n : natural
-  ) return unsigned is
-  begin
-    return shift_left(a(a'length-1 downto n), n);
-  end mask_lsb;
+  signal cache_addr : unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
+  signal cache_data : std_logic_vector(SDRAM_CTRL_DATA_WIDTH-1 downto 0);
+  signal offset     : natural range 0 to ROM_WORDS-1;
 begin
-  -- latch cache data from the SDRAM
-  latch_cache_data : process (clk)
+  -- cache data loaded from the SDRAM
+  cache_sdram_data : process (clk)
   begin
     if rising_edge(clk) then
-      if sdram_valid = '1' and cs = '1' then
+      if sdram_valid = '1' then
         cache_addr <= sdram_addr;
         cache_data <= sdram_data;
       end if;
     end if;
   end process;
 
-  -- Set the ROM data.
-  --
-  -- We need to extract the word at the rquested offset in the cache.
-  rom_data <= cache_data((ROM_WORDS-cache_offset)*ROM_DATA_WIDTH-1 downto (ROM_WORDS-cache_offset-1)*ROM_DATA_WIDTH);
+  -- calculate the offset of the ROM address in the cache
+  offset <= to_integer(rom_addr(MASK_WIDTH-1 downto 0)) when MASK_WIDTH > 0 else 0;
 
-  -- we have a cache hit if the request address is already in the cache
-  cache_hit <= '1' when sdram_addr = cache_addr else '0';
+  -- extract the word at the rquested offset in the cache
+  rom_data <= cache_data((ROM_WORDS-offset)*ROM_DATA_WIDTH-1 downto (ROM_WORDS-offset-1)*ROM_DATA_WIDTH);
 
-  -- calculate the cache offset
-  cache_offset <= to_integer(rom_addr(MASK_WIDTH-1 downto 0)) when MASK_WIDTH > 0 else 0;
-
-  -- request data if we have a cache miss
-  sdram_req <= not (cache_hit or cs);
-
-  -- Set SDRAM address.
-  --
   -- We need to mask the LSBs of the address, because we're converting from
   -- a ROM address to a 32-bit SDRAM address.
   --
   -- For example, converting an 8-bit address to a 32-bit address requires
   -- masking the two LSBs.
   sdram_addr <= resize(mask_lsb(rom_addr, MASK_WIDTH), sdram_addr'length) + ROM_OFFSET;
+
+  -- request data from the SDRAM if we have a cache miss
+  sdram_req <= '1' when sdram_addr /= cache_addr else '0';
 end architecture arch;

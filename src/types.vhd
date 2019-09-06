@@ -26,7 +26,6 @@ use ieee.math_real.all;
 package types is
   -- IOCTL
   constant IOCTL_ADDR_WIDTH : natural := 22;
-  constant IOCTL_DATA_WIDTH : natural := 8;
 
   -- SDRAM
   constant SDRAM_ADDR_WIDTH      : natural := 13;
@@ -52,6 +51,9 @@ package types is
 
   -- calculates the log2 of the given number
   function ilog2(n : natural) return natural;
+
+  -- masks the LSBs of the given value
+  function mask_lsb(a : unsigned; n : natural) return unsigned;
 end package types;
 
 package body types is
@@ -59,4 +61,12 @@ package body types is
   begin
     return natural(log2(real(n)));
   end ilog2;
+
+  function mask_lsb(
+    a : unsigned;
+    n : natural
+  ) return unsigned is
+  begin
+    return shift_left(a(a'length-1 downto n), n);
+  end mask_lsb;
 end package body types;
