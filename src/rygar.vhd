@@ -23,7 +23,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 
-package types is
+package rygar is
   -- IOCTL
   constant IOCTL_ADDR_WIDTH : natural := 22;
 
@@ -54,9 +54,9 @@ package types is
 
   -- masks the LSBs of the given value
   function mask_lsb(a : unsigned; n : natural) return unsigned;
-end package types;
+end package rygar;
 
-package body types is
+package body rygar is
   function ilog2(n : natural) return natural is
   begin
     return natural(log2(real(n)));
@@ -69,4 +69,4 @@ package body types is
   begin
     return shift_left(a(a'length-1 downto n), n);
   end mask_lsb;
-end package body types;
+end package body rygar;
