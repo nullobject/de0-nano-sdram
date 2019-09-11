@@ -23,7 +23,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 
-use work.types.all;
+use work.rygar.all;
 
 -- The SDRAM controller provides a symmetric 32-bit synchronous read-write
 -- interface to a 16Mx16-bit SDRAM memory module.
@@ -201,12 +201,6 @@ begin
           next_cmd   <= CMD_ACTIVE;
         end if;
 
-      -- execute an auto refresh
-      when REFRESH =>
-        if refresh_done = '1' then
-          next_state <= IDLE;
-        end if;
-
       -- activate the row
       when ACTIVE =>
         if active_done = '1' then
@@ -222,13 +216,34 @@ begin
       -- execute a read command
       when READ =>
         if read_done = '1' then
-          next_state <= IDLE;
+          if req = '1' then
+            next_state <= ACTIVE;
+            next_cmd   <= CMD_ACTIVE;
+          else
+            next_state <= IDLE;
+          end if;
         end if;
 
       -- execute a write command
       when WRITE =>
         if write_done = '1' then
-          next_state <= IDLE;
+          if req = '1' then
+            next_state <= ACTIVE;
+            next_cmd   <= CMD_ACTIVE;
+          else
+            next_state <= IDLE;
+          end if;
+        end if;
+
+      -- execute an auto refresh
+      when REFRESH =>
+        if refresh_done = '1' then
+          if req = '1' then
+            next_state <= ACTIVE;
+            next_cmd   <= CMD_ACTIVE;
+          else
+            next_state <= IDLE;
+          end if;
         end if;
     end case;
   end process;
@@ -282,7 +297,7 @@ begin
   latch_input_signals : process (clk)
   begin
     if rising_edge(clk) then
-      if state = IDLE then
+      if state = IDLE or (state = READ and read_done = '1') or (state = WRITE and write_done = '1') or (state = REFRESH and refresh_done = '1') then
         -- we need to multiply the address by two, because we are converting
         -- from a 32-bit controller address to a 16-bit SDRAM address
         addr_reg <= shift_left(resize(addr, addr_reg'length), 1);
@@ -311,10 +326,10 @@ begin
   write_done     <= '1' when wait_counter = BURST_LENGTH-1      else '0';
   should_refresh <= '1' when refresh_counter >= REFRESH_MAX-1   else '0';
 
-  -- the ACK signal is asserted after a write operation has completed
-  ack <= '1' when state = WRITE and write_done = '1' else '0';
+  -- the ack signal is asserted when a operation has started
+  ack <= '1' when state = ACTIVE and wait_counter = 0 else '0';
 
-  -- the VALID signal is asserted after a read operation has completed
+  -- the valid signal is asserted after a read operation has completed
   valid <= '1' when state = READ and read_done = '1' else '0';
 
   -- the memory controller is ready if we're in the IDLE state
