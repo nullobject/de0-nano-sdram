@@ -159,6 +159,8 @@ begin
     -- read interface
     main_rom_addr   => main_rom_addr,
     main_rom_data   => main_rom_data,
+    main_rom_cs     => '1',
+    main_rom_oe     => '1',
     sprite_rom_addr => sprite_rom_addr,
     sprite_rom_data => sprite_rom_data,
     char_rom_addr   => char_rom_addr,
