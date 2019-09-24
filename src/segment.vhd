@@ -34,7 +34,7 @@ entity segment is
     -- the width of the ROM data bus
     ROM_DATA_WIDTH : natural;
 
-    -- the offset of the ROM data in the SDRAM
+    -- the byte offset of the ROM data in the SDRAM
     ROM_OFFSET : natural := 0
   );
   port (
@@ -44,14 +44,14 @@ entity segment is
     -- clock
     clk : in std_logic;
 
-    -- Chip Select: When this signal is asserted, the memory segment may
-    -- request data from the ROM controller when it is required (i.e. not in
-    -- the cache).
+    -- When the chip select signal is asserted, the memory segment may request
+    -- data from the ROM controller when it is required (i.e. not in the
+    -- cache).
     cs : in std_logic := '1';
 
-    -- Output Enable: When this signal is asserted, the output buffer is
-    -- enabled and the word from the requested address will be placed on the
-    -- ROM data bus.
+    -- When the output enable signal is asserted, the output buffer is enabled
+    -- and the word from the requested address will be placed on the ROM data
+    -- bus.
     oe : in std_logic := '1';
 
     -- ROM interface
@@ -79,24 +79,27 @@ architecture arch of segment is
   signal offset : natural range 0 to ROM_WORDS-1;
 
   -- control signals
-  signal hit : std_logic;
-  signal ack : std_logic;
+  signal init : std_logic;
+  signal hit  : std_logic;
+  signal ack  : std_logic;
 
   -- cache signals
   signal cache_addr : unsigned(SDRAM_CTRL_ADDR_WIDTH-1 downto 0);
   signal cache_data : std_logic_vector(SDRAM_CTRL_DATA_WIDTH-1 downto 0);
-
-  -- debug
-  attribute keep : boolean;
-  attribute keep of hit : signal is true;
 begin
   -- cache data received from the SDRAM
-  cache_sdram_data : process (clk)
+  cache_sdram_data : process (clk, reset)
   begin
-    if rising_edge(clk) then
+    if reset = '1' then
+      init <= '0';
+    elsif rising_edge(clk) then
       if sdram_valid = '1' then
+        -- set the cache signals
         cache_addr <= sdram_addr;
         cache_data <= sdram_data;
+
+        -- assert the init signal after the cache has been filled
+        init <= '1';
       end if;
     end if;
   end process;
@@ -119,8 +122,9 @@ begin
     end if;
   end process;
 
-  -- assert the hit signal when the SDRAM address is already in the cache
-  hit <= '1' when sdram_addr = cache_addr else '0';
+  -- assert the hit signal when the cache has been filled, and the requested
+  -- address is in the cache
+  hit <= '1' when init = '1' and sdram_addr = cache_addr else '0';
 
   -- calculate the offset of the ROM address within a SDRAM word
   offset <= to_integer(rom_addr(OFFSET_WIDTH-1 downto 0)) when OFFSET_WIDTH > 0 else 0;
@@ -128,8 +132,11 @@ begin
   -- extract the word at the requested offset in the cache
   rom_data <= cache_data((ROM_WORDS-offset)*ROM_DATA_WIDTH-1 downto (ROM_WORDS-offset-1)*ROM_DATA_WIDTH) when cs = '1' and oe = '1' else (others => '0');
 
-  -- convert from a ROM address to a SDRAM address
-  sdram_addr <= resize(shift_right(rom_addr, OFFSET_WIDTH), SDRAM_CTRL_ADDR_WIDTH) + ROM_OFFSET;
+  -- Convert from a ROM address to a SDRAM address.
+  --
+  -- We need to divide the ROM offset by four, because we are converting to
+  -- a 32-bit SDRAM address.
+  sdram_addr <= resize(shift_right(rom_addr, OFFSET_WIDTH), SDRAM_CTRL_ADDR_WIDTH) + ROM_OFFSET/4;
 
   -- request data from the SDRAM unless there is a cache hit, or we just loaded
   -- data from the SDRAM but we haven't cached it yet

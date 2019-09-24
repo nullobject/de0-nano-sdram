@@ -84,8 +84,12 @@ architecture arch of top is
   signal sdram_ready : std_logic;
 
   -- ROM signals
-  signal main_rom_addr   : unsigned(MAIN_ROM_ADDR_WIDTH-1 downto 0);
-  signal main_rom_data   : std_logic_vector(MAIN_ROM_DATA_WIDTH-1 downto 0);
+  signal prog_rom_1_addr : unsigned(PROG_ROM_1_ADDR_WIDTH-1 downto 0);
+  signal prog_rom_1_data : std_logic_vector(PROG_ROM_1_DATA_WIDTH-1 downto 0);
+  signal prog_rom_2_addr : unsigned(PROG_ROM_2_ADDR_WIDTH-1 downto 0);
+  signal prog_rom_2_data : std_logic_vector(PROG_ROM_2_DATA_WIDTH-1 downto 0);
+  signal prog_rom_3_addr : unsigned(PROG_ROM_3_ADDR_WIDTH-1 downto 0);
+  signal prog_rom_3_data : std_logic_vector(PROG_ROM_3_DATA_WIDTH-1 downto 0);
   signal sprite_rom_addr : unsigned(SPRITE_ROM_ADDR_WIDTH-1 downto 0);
   signal sprite_rom_data : std_logic_vector(SPRITE_ROM_DATA_WIDTH-1 downto 0);
   signal char_rom_addr   : unsigned(CHAR_ROM_ADDR_WIDTH-1 downto 0);
@@ -145,22 +149,23 @@ begin
 
   -- ROM controller
   rom_controller : entity work.rom_controller
-  generic map (
-    MAIN_ROM_OFFSET   => 16#00#,
-    SPRITE_ROM_OFFSET => 16#01#,
-    CHAR_ROM_OFFSET   => 16#02#,
-    FG_ROM_OFFSET     => 16#03#,
-    BG_ROM_OFFSET     => 16#04#
-  )
   port map (
     reset => reset,
     clk   => sys_clk,
 
     -- read interface
-    main_rom_addr   => main_rom_addr,
-    main_rom_data   => main_rom_data,
-    main_rom_cs     => '1',
-    main_rom_oe     => '1',
+    prog_rom_1_cs   => '1',
+    prog_rom_1_oe   => '1',
+    prog_rom_1_addr => prog_rom_1_addr,
+    prog_rom_1_data => prog_rom_1_data,
+    prog_rom_2_cs   => '1',
+    prog_rom_2_oe   => '1',
+    prog_rom_2_addr => prog_rom_2_addr,
+    prog_rom_2_data => prog_rom_2_data,
+    prog_rom_3_cs   => '1',
+    prog_rom_3_oe   => '1',
+    prog_rom_3_addr => prog_rom_3_addr,
+    prog_rom_3_data => prog_rom_3_data,
     sprite_rom_addr => sprite_rom_addr,
     sprite_rom_data => sprite_rom_data,
     char_rom_addr   => char_rom_addr,
@@ -257,12 +262,14 @@ begin
   ioctl_download <= '1' when state = LOAD else '0';
 
   -- set ROM signals
-  main_rom_addr   <= to_unsigned(data_counter/2, main_rom_addr'length);
+  prog_rom_1_addr <= to_unsigned(data_counter/2, prog_rom_1_addr'length);
+  prog_rom_2_addr <= to_unsigned(data_counter/2, prog_rom_2_addr'length);
+  prog_rom_3_addr <= to_unsigned(data_counter/2, prog_rom_3_addr'length);
   sprite_rom_addr <= to_unsigned(data_counter/2, sprite_rom_addr'length);
   char_rom_addr   <= to_unsigned(data_counter/2, char_rom_addr'length);
   fg_rom_addr     <= to_unsigned(data_counter/2, fg_rom_addr'length);
   bg_rom_addr     <= to_unsigned(data_counter/2, bg_rom_addr'length);
 
   -- set output data
-  led <= main_rom_data;
+  led <= prog_rom_1_data;
 end architecture arch;

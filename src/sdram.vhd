@@ -26,13 +26,13 @@ use ieee.math_real.all;
 use work.rygar.all;
 
 -- The SDRAM controller provides a symmetric 32-bit synchronous read-write
--- interface to a 16Mx16-bit SDRAM memory module.
+-- interface to a 16Mx16-bit SDRAM chip.
 --
 -- Because the SDRAM data bus is only 16-bits wide, so the controller must
 -- burst two 16-bit words to read/write a single 32-bit word to the SDRAM.
 entity sdram is
   generic (
-    -- clock frequency in MHz
+    -- clock frequency (in MHz)
     CLK_FREQ : real
   );
   port (
@@ -80,10 +80,10 @@ architecture arch of sdram is
   constant CMD_NOP          : command_t := "111";
 
   -- timing values taken directly from the datasheet
-  constant T_MRD : real := 14.0; -- ns
-  constant T_RC  : real := 63.0; -- ns
-  constant T_RCD : real := 21.0; -- ns
-  constant T_RP  : real := 21.0; -- ns
+  constant T_MRD : real := 12.0; -- ns
+  constant T_RC  : real := 60.0; -- ns
+  constant T_RCD : real := 18.0; -- ns
+  constant T_RP  : real := 18.0; -- ns
 
   -- the number of words in a burst
   constant BURST_LENGTH : natural := 2;
